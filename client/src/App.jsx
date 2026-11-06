@@ -17,6 +17,10 @@ function App() {
   const [loadingDatasets, setLoadingDatasets] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [openingReport, setOpeningReport] = useState(false);
+  const [renameTarget, setRenameTarget] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [savingAction, setSavingAction] = useState(false);
   const visibleDatasets = useMemo(() => datasets.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
     const days = dateFilter === '7' ? 7 : dateFilter === '30' ? 30 : 0;
@@ -81,7 +85,7 @@ function App() {
 
   async function deleteDataset(item) {
     if (!item.id) return;
-    if (!window.confirm(`Delete “${item.name}” and its saved report?`)) return;
+    setSavingAction(true);
     try {
       const response = await fetch(`${API_URL}/datasets/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } });
       if (!response.ok) throw new Error('Delete failed');
@@ -89,7 +93,9 @@ function App() {
       setDatasets(next);
       if (active?.id === item.id) setActive(next[0] || null);
       setNotice(`${item.name} deleted.`);
+      setDeleteTarget(null);
     } catch { setNotice('Could not delete this dataset.'); }
+    finally { setSavingAction(false); }
   }
 
   async function selectDataset(item) {
@@ -111,8 +117,9 @@ function App() {
   }
 
   async function renameDataset(item) {
-    const name = window.prompt('Enter a new dataset name', item.name);
+    const name = renameValue;
     if (!name || !name.trim() || name.trim() === item.name) return;
+    setSavingAction(true);
     try {
       const response = await fetch(`${API_URL}/datasets/${item.id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` }, body: JSON.stringify({ name: name.trim() }),
@@ -122,7 +129,9 @@ function App() {
       setDatasets((current) => current.map((dataset) => dataset.id === item.id ? updated : dataset));
       if (active?.id === item.id) setActive(updated);
       setNotice('Dataset renamed.');
+      setRenameTarget(null);
     } catch { setNotice('Could not rename this dataset.'); }
+    finally { setSavingAction(false); }
   }
 
   if (!session?.token) return <AuthScreen mode={authMode} setMode={setAuthMode} onSuccess={saveSession} />;
@@ -153,9 +162,11 @@ function App() {
           <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows in your latest saved datasets</div></div><div className="activity-total">{datasets.length} saved</div></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows per dataset</span></div>{activityRows.length ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={activityRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 9 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="rows" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={28} /></BarChart></ResponsiveContainer></div> : <div className="chart-empty">Upload a CSV to see activity here.</div>}</div>
           <QualityOverview datasets={datasets} />
         </section>
-        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className="filter-button" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => renameDataset(item)} onDelete={() => deleteDataset(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
+        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className="filter-button" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
         {openingReport && <div className="report-loading">Loading saved report…</div>}
         {active?.report && <ReportPanel dataset={active} />}
+        {renameTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingAction) setRenameTarget(null); }}><section className="action-modal" role="dialog" aria-modal="true" aria-labelledby="rename-title"><button className="modal-close" aria-label="Close" onClick={() => setRenameTarget(null)}><X size={17} /></button><div className="modal-icon rename-icon"><FileText size={17} /></div><h2 id="rename-title">Rename dataset</h2><p>Choose a clear name for this saved dataset.</p><label className="modal-label">Dataset name<input autoFocus maxLength={100} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') renameDataset(renameTarget); }} /></label><div className="modal-actions"><button className="secondary-action" onClick={() => setRenameTarget(null)} disabled={savingAction}>Cancel</button><button className="confirm-action" onClick={() => renameDataset(renameTarget)} disabled={savingAction || !renameValue.trim()}>{savingAction ? 'Saving…' : 'Save name'}</button></div></section></div>}
+        {deleteTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingAction) setDeleteTarget(null); }}><section className="action-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><button className="modal-close" aria-label="Close" onClick={() => setDeleteTarget(null)}><X size={17} /></button><div className="modal-icon delete-icon"><Trash2 size={17} /></div><h2 id="delete-title">Delete this dataset?</h2><p><b>{deleteTarget.name}</b> and its saved analysis report will be permanently removed.</p><div className="modal-actions"><button className="secondary-action" onClick={() => setDeleteTarget(null)} disabled={savingAction}>Cancel</button><button className="danger-action" onClick={() => deleteDataset(deleteTarget)} disabled={savingAction}>{savingAction ? 'Deleting…' : 'Delete dataset'}</button></div></section></div>}
         <footer className="page-footer"><span>© 2024 DataLens, Inc.</span><span><a>Privacy</a><a>Terms</a><a>Status <i className="footer-status" /></a></span><span>Made for curious minds <span className="heart">♥</span></span></footer>
       </div>
     </main>
@@ -287,6 +298,6 @@ function calculateCorrelation(rows, firstName, secondName) {
 
 function shortName(name) { return name.length > 8 ? `${name.slice(0, 7)}…` : name; }
 function roundNumber(number) { return Math.round(number * 100) / 100; }
-function DatasetRow({ item, isActive, onSelect, onRename, onDelete }) { return <div className={`dataset-row ${isActive ? 'selected' : ''}`} onClick={onSelect}><div className="dataset-name"><div className={`file-icon ${item.color}`}><FileSpreadsheet size={17} /></div><div><b>{item.name}</b><small>CSV file · saved report</small></div></div><span className="cell-muted">{item.rows}</span><span className="cell-muted">{item.columnsCount}</span><span className="cell-muted">{item.date}</span><span><i className="ready-dot" />Ready</span><div className="row-buttons"><button className="row-menu" title="Rename dataset" onClick={(event) => { event.stopPropagation(); onRename(); }}><FileText size={14} /></button><button className="row-menu" title="Delete dataset" onClick={(event) => { event.stopPropagation(); onDelete(); }}><Trash2 size={15} /></button></div></div>; }
+function DatasetRow({ item, isActive, onSelect, onRename, onDelete }) { return <div className={`dataset-row ${isActive ? 'selected' : ''}`} onClick={onSelect}><div className="dataset-name"><div className={`file-icon ${item.color}`}><FileSpreadsheet size={17} /></div><div><b>{item.name}</b><small>CSV file · saved report</small></div></div><span className="cell-muted">{item.rows}</span><span className="cell-muted">{item.columnsCount}</span><span className="cell-muted">{item.date}</span><span><i className="ready-dot" />Ready</span><div className="row-buttons"><button className="row-menu open-row-action" title="Open report" aria-label={`Open report for ${item.name}`} onClick={(event) => { event.stopPropagation(); onSelect(); }}><ArrowUpRight size={14} /></button><button className="row-menu" title="Rename dataset" aria-label={`Rename ${item.name}`} onClick={(event) => { event.stopPropagation(); onRename(); }}><FileText size={14} /></button><button className="row-menu" title="Delete dataset" aria-label={`Delete ${item.name}`} onClick={(event) => { event.stopPropagation(); onDelete(); }}><Trash2 size={15} /></button></div></div>; }
 
 export default App;
