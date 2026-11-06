@@ -22,9 +22,19 @@ const upload = multer({
 router.get('/', requireAuth, async (req, res) => {
   try {
     const datasets = await Dataset.find({ userId: req.userId }).sort({ createdAt: -1 }).select('-preview');
-    res.json(datasets);
+    res.json(datasets.map((dataset) => ({ ...dataset.toObject(), reportAvailable: true })));
   } catch (error) {
     res.status(500).json({ message: 'Could not load datasets.' });
+  }
+});
+
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const dataset = await Dataset.findOne({ _id: req.params.id, userId: req.userId });
+    if (!dataset) return res.status(404).json({ message: 'Dataset not found.' });
+    res.json(dataset);
+  } catch (error) {
+    res.status(400).json({ message: 'Could not load this report.' });
   }
 });
 
@@ -44,7 +54,7 @@ router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => 
       const presentValues = values.filter((value) => value !== '' && value !== null && value !== undefined);
       const numericValues = presentValues.map(Number).filter(Number.isFinite);
       const isNumeric = presentValues.length > 0 && numericValues.length === presentValues.length;
-      const result = { name, type: isNumeric ? 'numeric' : 'categorical', missingCount: values.length - presentValues.length };
+      const result = { name, type: isNumeric ? 'numeric' : 'categorical', totalCount: values.length, missingCount: values.length - presentValues.length };
 
       if (isNumeric && numericValues.length) {
         const sorted = [...numericValues].sort((a, b) => a - b);
@@ -58,7 +68,7 @@ router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => 
       }
       return result;
     });
-    const preview = records.slice(0, 8);
+    const preview = records.slice(0, 200);
     const duplicateCount = records.length - new Set(records.map((row) => JSON.stringify(row))).size;
     const report = { fileName: req.file.originalname, rowCount: records.length, columnCount: columns.length, columns: columnSummary, duplicateCount, preview };
     if (mongooseReady()) {

@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowDown, ArrowUpRight, BarChart3, Bell, Check, ChevronDown, CircleHelp, CloudUpload, Database, FileSpreadsheet, FileText, LayoutDashboard, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Sparkles, Table2, Trash2, X } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Activity, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp, Database, FileSpreadsheet, FileText, LayoutDashboard, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Sparkles, Table2, Trash2, X } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const API_URL = 'http://localhost:5000/api';
 
-const sampleRows = [
-  { date: 'Jan', revenue: 28, orders: 18 }, { date: 'Feb', revenue: 36, orders: 23 },
-  { date: 'Mar', revenue: 31, orders: 20 }, { date: 'Apr', revenue: 48, orders: 29 },
-  { date: 'May', revenue: 42, orders: 27 }, { date: 'Jun', revenue: 59, orders: 35 },
-  { date: 'Jul', revenue: 52, orders: 31 }, { date: 'Aug', revenue: 72, orders: 42 },
-  { date: 'Sep', revenue: 65, orders: 37 }, { date: 'Oct', revenue: 83, orders: 48 },
-  { date: 'Nov', revenue: 76, orders: 43 }, { date: 'Dec', revenue: 94, orders: 55 },
-];
 function App() {
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem('datalens-session') || 'null'); } catch { return null; }
@@ -22,8 +14,10 @@ function App() {
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [openingReport, setOpeningReport] = useState(false);
   const visibleDatasets = useMemo(() => datasets.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [datasets, search]);
   const totalRows = datasets.reduce((sum, item) => sum + Number(item.rowCount || 0), 0);
+  const activityRows = useMemo(() => makeActivityRows(datasets), [datasets]);
 
   function saveSession(nextSession) {
     localStorage.setItem('datalens-session', JSON.stringify(nextSession));
@@ -88,6 +82,20 @@ function App() {
     } catch { setNotice('Could not delete this dataset.'); }
   }
 
+  async function selectDataset(item) {
+    setActive(item);
+    if (item.report?.preview?.length || !item.id) return;
+    setOpeningReport(true);
+    try {
+      const response = await fetch(`${API_URL}/datasets/${item.id}`, { headers: { Authorization: `Bearer ${session.token}` } });
+      if (!response.ok) throw new Error('Could not open report');
+      const detail = formatDataset(await response.json());
+      setDatasets((current) => current.map((dataset) => dataset.id === item.id ? detail : dataset));
+      setActive(detail);
+    } catch { setNotice('Could not open this report. Try again.'); }
+    finally { setOpeningReport(false); }
+  }
+
   async function renameDataset(item) {
     const name = window.prompt('Enter a new dataset name', item.name);
     if (!name || !name.trim() || name.trim() === item.name) return;
@@ -128,10 +136,11 @@ function App() {
           <StatCard label="Data quality" value={datasets.length ? `${Math.round(datasets.reduce((sum, item) => sum + (item.report?.columns?.length ? item.report.columns.reduce((colSum, col) => colSum + (1 - col.missingCount / Math.max(item.rowCount, 1)), 0) / item.report.columns.length : 1), 0) / datasets.length * 100)}%` : '—'} note="Average completeness" icon={<ShieldCheck size={17} />} tone="green" trend="From reports" />
         </section>
         <section className="middle-grid">
-          <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows analyzed over the last 12 months</div></div><button className="select-button">This year <ChevronDown size={14} /></button></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows analyzed</span><span><i className="legend-dot orders-dot" />Datasets</span></div><div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={sampleRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }} barGap={5}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 11 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} ticks={[0, 25, 50, 75, 100]} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="revenue" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={16} /><Bar dataKey="orders" fill="#c9c3fb" radius={[4, 4, 0, 0]} maxBarSize={16} /></BarChart></ResponsiveContainer></div></div>
-          <div className="panel quality-panel"><div className="panel-heading"><div><div className="panel-title">Data quality overview</div><div className="panel-description">Average across your datasets</div></div><button className="dots-button"><MoreHorizontal size={18} /></button></div><div className="quality-score"><div className="score-ring"><div><strong>94</strong><small>/ 100</small></div></div><div className="score-copy"><b>Looking good!</b><span>Your data is in great shape</span><div className="score-change"><ArrowUpRight size={13} /> 2.1% this month</div></div></div><div className="quality-list"><QualityRow label="Completeness" value="96.8%" percent="96.8%" color="purple" /><QualityRow label="Uniqueness" value="91.4%" percent="91.4%" color="blue" /><QualityRow label="Consistency" value="94.5%" percent="94.5%" color="orange" /></div><div className="quality-footer"><span><Check size={14} /> No critical issues found</span><ArrowUpRight size={15} /></div></div>
+          <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows in your latest saved datasets</div></div><div className="activity-total">{datasets.length} saved</div></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows per dataset</span></div>{activityRows.length ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={activityRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 9 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="rows" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={28} /></BarChart></ResponsiveContainer></div> : <div className="chart-empty">Upload a CSV to see activity here.</div>}</div>
+          <QualityOverview datasets={datasets} />
         </section>
-        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><button className="filter-button">Last 30 days <ChevronDown size={14} /></button></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => setActive(item)} onRename={() => renameDataset(item)} onDelete={() => deleteDataset(item)} />) : <div className="empty-search">{search ? `No datasets match “${search}”` : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
+        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><button className="filter-button">Last 30 days <ChevronDown size={14} /></button></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => renameDataset(item)} onDelete={() => deleteDataset(item)} />) : <div className="empty-search">{search ? `No datasets match “${search}”` : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
+        {openingReport && <div className="report-loading">Loading saved report…</div>}
         {active?.report && <ReportPanel dataset={active} />}
         <footer className="page-footer"><span>© 2024 DataLens, Inc.</span><span><a>Privacy</a><a>Terms</a><a>Status <i className="footer-status" /></a></span><span>Made for curious minds <span className="heart">♥</span></span></footer>
       </div>
@@ -149,8 +158,26 @@ function formatDataset(item) {
     date: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Just now',
     type: 'CSV',
     color,
-    report: item.report || item,
+    report: item.report || (item.preview ? item : null),
   };
+}
+
+function makeActivityRows(datasets) {
+  return [...datasets].slice(0, 8).reverse().map((item) => ({
+    name: item.name.length > 12 ? `${item.name.slice(0, 10)}…` : item.name,
+    rows: Number(item.rowCount || 0),
+  }));
+}
+
+function QualityOverview({ datasets }) {
+  const columns = datasets.flatMap((dataset) => dataset.report?.columns || []);
+  const totalCells = columns.reduce((sum, column) => sum + Number(column.totalCount || 0), 0);
+  const missingCells = columns.reduce((sum, column) => sum + Number(column.missingCount || 0), 0);
+  const completeness = totalCells ? Math.round((1 - missingCells / totalCells) * 100) : 0;
+  const duplicateRows = datasets.reduce((sum, dataset) => sum + Number(dataset.duplicateCount || 0), 0);
+  const uniqueness = datasets.length ? Math.round((1 - duplicateRows / Math.max(datasets.reduce((sum, dataset) => sum + Number(dataset.rowCount || 0), 0), 1)) * 100) : 0;
+  const quality = Math.round((completeness + uniqueness) / (datasets.length ? 2 : 1));
+  return <div className="panel quality-panel"><div className="panel-heading"><div><div className="panel-title">Data quality overview</div><div className="panel-description">Calculated from saved reports</div></div><div className="activity-total">{datasets.length} datasets</div></div><div className="quality-score"><div className="score-ring" style={{ background: `conic-gradient(#6759e9 0 ${quality}%,#eeedf8 ${quality}% 100%)` }}><div><strong>{datasets.length ? quality : '—'}</strong><small>/ 100</small></div></div><div className="score-copy"><b>{datasets.length ? quality > 85 ? 'Looking good!' : 'Room to improve' : 'No reports yet'}</b><span>{datasets.length ? 'Based on completeness and duplicates' : 'Upload a CSV to get started'}</span></div></div><div className="quality-list"><QualityRow label="Completeness" value={`${completeness}%`} percent={`${completeness}%`} color="purple" /><QualityRow label="Uniqueness" value={`${uniqueness}%`} percent={`${uniqueness}%`} color="blue" /><QualityRow label="Reports saved" value={String(datasets.length)} percent={`${Math.min(datasets.length * 12, 100)}%`} color="orange" /></div><div className="quality-footer"><span><Check size={14} /> Based on your actual data</span></div></div>;
 }
 
 function AuthScreen({ mode, setMode, onSuccess }) {
@@ -182,11 +209,69 @@ function ReportPanel({ dataset }) {
   const report = dataset.report;
   const columns = report.columns || [];
   const preview = report.preview || [];
-  return <section className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
+  const numericColumns = columns.filter((column) => column.type === 'numeric');
+  const categoricalColumns = columns.filter((column) => column.type === 'categorical');
+  const missingData = columns.map((column) => ({ name: shortName(column.name), missing: column.missingCount || 0 })).filter((column) => column.missing > 0);
+  return <section className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} rows={preview} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} rows={preview} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap columns={numericColumns} rows={preview} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
 }
 
 function StatCard({ label, value, note, icon, tone, trend }) { return <div className="stat-card"><div className="stat-top"><div className={`stat-icon ${tone}`}>{icon}</div><span className="stat-trend"><ArrowUpRight size={13} />{trend}</span></div><div className="stat-value">{value}</div><div className="stat-label">{label}</div><div className="stat-note">{note}</div></div>; }
 function QualityRow({ label, value, percent, color }) { return <div className="quality-row"><div><span>{label}</span><b>{value}</b></div><div className="progress-track"><i className={color} style={{ width: percent }} /></div></div>; }
+function NumericHistogram({ column, rows }) {
+  const values = rows.map((row) => Number(row[column.name])).filter(Number.isFinite);
+  const bins = makeHistogram(values);
+  return <div className="visual-card"><div className="visual-heading"><b>{column.name}</b><span>Numeric distribution</span></div>{bins.length ? <ResponsiveContainer width="100%" height={155}><BarChart data={bins} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="count" fill="#695ce8" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer> : <div className="visual-empty">Preview does not contain numeric values for this column.</div>}</div>;
+}
+
+function CategoryChart({ column, rows }) {
+  const counts = {};
+  rows.forEach((row) => { const value = String(row[column.name] ?? '').trim(); if (value) counts[value] = (counts[value] || 0) + 1; });
+  const data = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name: name.length > 13 ? `${name.slice(0, 12)}…` : name, count }));
+  return <div className="visual-card"><div className="visual-heading"><b>{column.name}</b><span>Top categories</span></div>{data.length ? <ResponsiveContainer width="100%" height={155}><BarChart data={data} layout="vertical" margin={{ top: 2, right: 8, left: 4, bottom: 0 }}><CartesianGrid horizontal={false} stroke="#edf0f4" /><XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><YAxis type="category" dataKey="name" width={70} axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="count" fill="#7bbca2" radius={[0, 3, 3, 0]} /></BarChart></ResponsiveContainer> : <div className="visual-empty">Preview does not contain category values for this column.</div>}</div>;
+}
+
+function MissingChart({ data }) {
+  return <div className="visual-card"><div className="visual-heading"><b>Missing values</b><span>Rows missing per column</span></div><ResponsiveContainer width="100%" height={155}><BarChart data={data} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="missing" fill="#e6a365" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div>;
+}
+
+function CorrelationHeatmap({ columns, rows }) {
+  const values = columns.slice(0, 6);
+  return <div className="visual-card"><div className="visual-heading"><b>Correlation heatmap</b><span>From the saved preview</span></div><div className="heatmap-wrap"><table className="heatmap"><thead><tr><th /><th>{values.map((column) => <span key={column.name} title={column.name}>{shortName(column.name)}</span>)}</th></tr></thead><tbody>{values.map((rowColumn) => <tr key={rowColumn.name}><th title={rowColumn.name}>{shortName(rowColumn.name)}</th>{values.map((column) => {
+    const correlation = calculateCorrelation(rows, rowColumn.name, column.name);
+    const strength = Math.abs(correlation);
+    const background = correlation >= 0 ? `rgba(104, 91, 225, ${0.08 + strength * 0.75})` : `rgba(224, 137, 108, ${0.08 + strength * 0.75})`;
+    return <td key={column.name} style={{ background }} title={`${rowColumn.name} / ${column.name}: ${correlation.toFixed(2)}`}>{Number.isFinite(correlation) ? correlation.toFixed(2) : '—'}</td>;
+  })}</tr>)}</tbody></table></div></div>;
+}
+
+function makeHistogram(values) {
+  if (!values.length) return [];
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  if (low === high) return [{ range: String(low), count: values.length }];
+  const binCount = Math.min(8, Math.max(4, Math.ceil(Math.sqrt(values.length))));
+  const size = (high - low) / binCount;
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    range: `${roundNumber(low + index * size)}–${roundNumber(index === binCount - 1 ? high : low + (index + 1) * size)}`,
+    count: 0,
+  }));
+  values.forEach((value) => { const index = Math.min(binCount - 1, Math.floor((value - low) / size)); bins[index].count += 1; });
+  return bins;
+}
+
+function calculateCorrelation(rows, firstName, secondName) {
+  const pairs = rows.map((row) => [Number(row[firstName]), Number(row[secondName])]).filter(([first, second]) => Number.isFinite(first) && Number.isFinite(second));
+  if (pairs.length < 2) return NaN;
+  const firstMean = pairs.reduce((sum, pair) => sum + pair[0], 0) / pairs.length;
+  const secondMean = pairs.reduce((sum, pair) => sum + pair[1], 0) / pairs.length;
+  const numerator = pairs.reduce((sum, pair) => sum + (pair[0] - firstMean) * (pair[1] - secondMean), 0);
+  const firstSpread = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[0] - firstMean) ** 2, 0));
+  const secondSpread = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[1] - secondMean) ** 2, 0));
+  return firstSpread && secondSpread ? numerator / (firstSpread * secondSpread) : NaN;
+}
+
+function shortName(name) { return name.length > 8 ? `${name.slice(0, 7)}…` : name; }
+function roundNumber(number) { return Math.round(number * 100) / 100; }
 function DatasetRow({ item, isActive, onSelect, onRename, onDelete }) { return <div className={`dataset-row ${isActive ? 'selected' : ''}`} onClick={onSelect}><div className="dataset-name"><div className={`file-icon ${item.color}`}><FileSpreadsheet size={17} /></div><div><b>{item.name}</b><small>CSV file · saved report</small></div></div><span className="cell-muted">{item.rows}</span><span className="cell-muted">{item.columnsCount}</span><span className="cell-muted">{item.date}</span><span><i className="ready-dot" />Ready</span><div className="row-buttons"><button className="row-menu" title="Rename dataset" onClick={(event) => { event.stopPropagation(); onRename(); }}><FileText size={14} /></button><button className="row-menu" title="Delete dataset" onClick={(event) => { event.stopPropagation(); onDelete(); }}><Trash2 size={15} /></button></div></div>; }
 
 export default App;
