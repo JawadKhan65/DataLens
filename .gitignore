@@ -2,4 +2,8 @@ node_modules/
 client/dist/
 server/uploads/
 .env
+*.env.local
+*.env.production
+client/.env
+server/.env
 .DS_Store

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Activity, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp, Database, FileSpreadsheet, FileText, LayoutDashboard, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Sparkles, Table2, Trash2, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 function App() {
   const [session, setSession] = useState(() => {
@@ -43,17 +43,25 @@ function App() {
     setActive(null);
   }
 
+  async function apiRequest(path, options = {}) {
+    const headers = { ...options.headers };
+    if (session?.token) headers.Authorization = `Bearer ${session.token}`;
+    const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+    if (response.status === 401) { signOut(); throw new Error('SESSION_EXPIRED'); }
+    return response;
+  }
+
   useEffect(() => {
     if (!session?.token) return;
     setLoadingDatasets(true);
-    fetch(`${API_URL}/datasets`, { headers: { Authorization: `Bearer ${session.token}` } })
+    apiRequest('/datasets')
       .then((response) => { if (!response.ok) throw new Error('API unavailable'); return response.json(); })
       .then((items) => {
         const formatted = items.map(formatDataset);
         setDatasets(formatted);
         setActive(formatted[0] || null);
       })
-      .catch(() => setNotice('Could not load saved datasets. Check that the API and MongoDB are running.'))
+      .catch((error) => setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not load saved datasets. Check that the API and MongoDB are running.'))
       .finally(() => setLoadingDatasets(false));
   }, [session?.token]);
 
@@ -67,7 +75,7 @@ function App() {
     const form = new FormData();
     form.append('file', file);
     try {
-      const response = await fetch(`${API_URL}/datasets/analyze`, { method: 'POST', headers: { Authorization: `Bearer ${session.token}` }, body: form });
+      const response = await apiRequest('/datasets/analyze', { method: 'POST', body: form });
       const report = await response.json();
       if (!response.ok) throw new Error(report.message || 'Upload failed.');
       if (!report.id) {
@@ -80,7 +88,7 @@ function App() {
       setActive(item);
       setNotice(`${file.name} analyzed successfully.`);
     } catch (error) {
-      setNotice(error.message === 'Failed to fetch' ? 'Could not reach the API. Start the server with npm run dev, then upload again.' : error.message);
+      setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : error.message === 'Failed to fetch' ? 'Could not reach the API. Start the server with npm run dev, then upload again.' : error.message);
     } finally { setUploading(false); }
   }
 
@@ -88,14 +96,14 @@ function App() {
     if (!item.id) return;
     setSavingAction(true);
     try {
-      const response = await fetch(`${API_URL}/datasets/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } });
+      const response = await apiRequest(`/datasets/${item.id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Delete failed');
       const next = datasets.filter((dataset) => dataset.id !== item.id);
       setDatasets(next);
       if (active?.id === item.id) setActive(next[0] || null);
       setNotice(`${item.name} deleted.`);
       setDeleteTarget(null);
-    } catch { setNotice('Could not delete this dataset.'); }
+    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not delete this dataset.'); }
     finally { setSavingAction(false); }
   }
 
@@ -107,13 +115,13 @@ function App() {
     }
     setOpeningReport(true);
     try {
-      const response = await fetch(`${API_URL}/datasets/${item.id}`, { headers: { Authorization: `Bearer ${session.token}` } });
+      const response = await apiRequest(`/datasets/${item.id}`);
       if (!response.ok) throw new Error('Could not open report');
       const detail = formatDataset(await response.json());
       setDatasets((current) => current.map((dataset) => dataset.id === item.id ? detail : dataset));
       setActive(detail);
       setTimeout(() => document.getElementById('analysis-report')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-    } catch { setNotice('Could not open this report. Try again.'); }
+    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not open this report. Try again.'); }
     finally { setOpeningReport(false); }
   }
 
@@ -122,8 +130,8 @@ function App() {
     if (!name || !name.trim() || name.trim() === item.name) return;
     setSavingAction(true);
     try {
-      const response = await fetch(`${API_URL}/datasets/${item.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` }, body: JSON.stringify({ name: name.trim() }),
+      const response = await apiRequest(`/datasets/${item.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }),
       });
       if (!response.ok) throw new Error('Rename failed');
       const updated = formatDataset(await response.json());
@@ -131,11 +139,11 @@ function App() {
       if (active?.id === item.id) setActive(updated);
       setNotice('Dataset renamed.');
       setRenameTarget(null);
-    } catch { setNotice('Could not rename this dataset.'); }
+    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not rename this dataset.'); }
     finally { setSavingAction(false); }
   }
 
-  if (!session?.token) return <AuthScreen mode={authMode} setMode={setAuthMode} onSuccess={saveSession} />;
+  if (!session?.token) return <AuthScreen mode={authMode} setMode={setAuthMode} onSuccess={saveSession} notice={notice} />;
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -207,7 +215,7 @@ function QualityOverview({ datasets }) {
   return <div className="panel quality-panel"><div className="panel-heading"><div><div className="panel-title">Data quality overview</div><div className="panel-description">Calculated from saved reports</div></div><div className="activity-total">{datasets.length} datasets</div></div><div className="quality-score"><div className="score-ring" style={{ background: `conic-gradient(#6759e9 0 ${quality}%,#eeedf8 ${quality}% 100%)` }}><div><strong>{datasets.length ? quality : '—'}</strong><small>/ 100</small></div></div><div className="score-copy"><b>{datasets.length ? quality > 85 ? 'Looking good!' : 'Room to improve' : 'No reports yet'}</b><span>{datasets.length ? 'Based on completeness and duplicates' : 'Upload a CSV to get started'}</span></div></div><div className="quality-list"><QualityRow label="Completeness" value={`${completeness}%`} percent={`${completeness}%`} color="purple" /><QualityRow label="Uniqueness" value={`${uniqueness}%`} percent={`${uniqueness}%`} color="blue" /><QualityRow label="Reports saved" value={String(datasets.length)} percent={`${Math.min(datasets.length * 12, 100)}%`} color="orange" /></div><div className="quality-footer"><span><Check size={14} /> Based on your actual data</span></div></div>;
 }
 
-function AuthScreen({ mode, setMode, onSuccess }) {
+function AuthScreen({ mode, setMode, onSuccess, notice }) {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -229,7 +237,7 @@ function AuthScreen({ mode, setMode, onSuccess }) {
     } finally { setLoading(false); }
   }
 
-  return <main className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><Activity size={18} strokeWidth={2.8} /></div><span>data<span className="brand-light">lens</span></span><span className="brand-beta">BETA</span></div><div className="auth-intro"><div className="eyebrow">YOUR DATA, MADE CLEAR</div><h1>{isRegister ? 'Create your account' : 'Welcome back'}</h1><p>{isRegister ? 'Start exploring your datasets in a few clicks.' : 'Sign in to continue to your workspace.'}</p></div><form className="auth-form" onSubmit={submit}>{isRegister && <label>Your name<input autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Jawad Khan" required /></label>}<label>Email address<input type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" required /></label><label>Password<input type="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 8 : undefined} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder={isRegister ? 'At least 8 characters' : 'Enter your password'} required /></label>{error && <div className="auth-error">{error}</div>}<button className="auth-submit" disabled={loading}>{loading ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}<ArrowUpRight size={15} /></button></form><div className="auth-switch">{isRegister ? 'Already have an account?' : 'New to DataLens?'} <button onClick={() => { setError(''); setMode(isRegister ? 'login' : 'register'); }}>{isRegister ? 'Sign in' : 'Create an account'}</button></div><div className="auth-note"><ShieldCheck size={14} /> Your datasets are private to your account</div></div></main>;
+  return <main className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><Activity size={18} strokeWidth={2.8} /></div><span>data<span className="brand-light">lens</span></span><span className="brand-beta">BETA</span></div><div className="auth-intro"><div className="eyebrow">YOUR DATA, MADE CLEAR</div><h1>{isRegister ? 'Create your account' : 'Welcome back'}</h1><p>{isRegister ? 'Start exploring your datasets in a few clicks.' : 'Sign in to continue to your workspace.'}</p></div>{notice && <div className="auth-error session-notice">{notice}</div>}<form className="auth-form" onSubmit={submit}>{isRegister && <label>Your name<input autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Jawad Khan" required /></label>}<label>Email address<input type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" required /></label><label>Password<input type="password" autoComplete={isRegister ? 'new-password' : 'current-password'} minLength={isRegister ? 8 : undefined} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder={isRegister ? 'At least 8 characters' : 'Enter your password'} required /></label>{error && <div className="auth-error">{error}</div>}<button className="auth-submit" disabled={loading}>{loading ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}<ArrowUpRight size={15} /></button></form><div className="auth-switch">{isRegister ? 'Already have an account?' : 'New to DataLens?'} <button onClick={() => { setError(''); setMode(isRegister ? 'login' : 'register'); }}>{isRegister ? 'Sign in' : 'Create an account'}</button></div><div className="auth-note"><ShieldCheck size={14} /> Your datasets are private to your account</div></div></main>;
 }
 
 function ReportPanel({ dataset }) {

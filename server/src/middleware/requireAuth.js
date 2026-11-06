@@ -5,7 +5,9 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ message: 'Please sign in to continue.' });
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'development-secret-change-me');
+    const secret = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'local-development-secret-do-not-use-in-production');
+    if (!secret) return res.status(500).json({ message: 'Authentication is not configured on this server.' });
+    const payload = jwt.verify(token, secret);
     req.userId = payload.userId;
     next();
   } catch (error) {

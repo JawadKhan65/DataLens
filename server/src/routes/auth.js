@@ -3,20 +3,23 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const { rateLimit } = require('express-rate-limit');
 
 const router = express.Router();
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false, message: { message: 'Too many sign-in attempts. Wait a few minutes and try again.' } });
 
 router.use((req, res, next) => {
   if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database is unavailable. Start MongoDB and try again.' });
   next();
 });
 
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
 
   if (!name || !email || !password) return res.status(400).json({ message: 'Name, email, and password are required.' });
+  if (name.length > 60 || email.length > 254 || Buffer.byteLength(password, 'utf8') > 72) return res.status(400).json({ message: 'Name or email is too long, or password exceeds the 72-byte security limit.' });
   if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: 'Enter a valid email address.' });
   if (password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters.' });
 
@@ -31,7 +34,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   if (!email || !password) return res.status(400).json({ message: 'Email and password are required.' });
@@ -47,8 +50,14 @@ router.post('/login', async (req, res) => {
 });
 
 function createSession(user) {
-  const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'development-secret-change-me', { expiresIn: '7d' });
+  const token = jwt.sign({ userId: user.id }, getJwtSecret(), { expiresIn: '7d' });
   return { token, user: { id: user.id, name: user.name, email: user.email } };
+}
+
+function getJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') throw new Error('JWT_SECRET is not configured.');
+  return 'local-development-secret-do-not-use-in-production';
 }
 
 module.exports = router;
