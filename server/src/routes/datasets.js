@@ -43,18 +43,27 @@ router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => 
 
   try {
     const records = parse(req.file.buffer.toString('utf8'), {
-      columns: true,
+      columns: (headers) => validateHeaders(headers),
       skip_empty_lines: true,
       bom: true,
       trim: true,
+      max_record_size: 1024 * 1024,
     });
+    if (!records.length) return res.status(400).json({ message: 'This CSV has headers but no data rows.' });
     const columns = Object.keys(records[0] || {});
     const columnSummary = columns.map((name) => {
       const values = records.map((row) => row[name]);
       const presentValues = values.filter((value) => value !== '' && value !== null && value !== undefined);
       const numericValues = presentValues.map(Number).filter(Number.isFinite);
-      const isNumeric = presentValues.length > 0 && numericValues.length === presentValues.length;
-      const result = { name, type: isNumeric ? 'numeric' : 'categorical', totalCount: values.length, missingCount: values.length - presentValues.length };
+      const isNumeric = presentValues.length > 0 && numericValues.length / presentValues.length >= 0.8;
+      const invalidCount = isNumeric ? presentValues.length - numericValues.length : 0;
+      const result = {
+        name,
+        type: isNumeric ? 'numeric' : 'categorical',
+        totalCount: values.length,
+        missingCount: values.length - presentValues.length + invalidCount,
+        invalidCount,
+      };
 
       if (isNumeric && numericValues.length) {
         const sorted = [...numericValues].sort((a, b) => a - b);
@@ -84,7 +93,7 @@ router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => 
     } else report.saved = false;
     res.json(report);
   } catch (error) {
-    res.status(400).json({ message: 'The CSV could not be read. Check that it has a header row and valid CSV formatting.' });
+    res.status(400).json({ message: csvErrorMessage(error) });
   }
 });
 
@@ -117,6 +126,29 @@ router.use((error, req, res, next) => {
 
 function round(value) { return Math.round(value * 100) / 100; }
 function mongooseReady() { return mongoose.connection.readyState === 1; }
+
+function validateHeaders(headers) {
+  const cleanedHeaders = headers.map((header) => String(header || '').trim());
+  if (!cleanedHeaders.length || cleanedHeaders.some((header) => !header)) {
+    throw new Error('The CSV must have a non-empty name for every column in its first row.');
+  }
+  const duplicates = cleanedHeaders.filter((header, index) => cleanedHeaders.indexOf(header) !== index);
+  if (duplicates.length) throw new Error(`Duplicate column name: ${duplicates[0]}. Rename duplicate headers and upload again.`);
+  return cleanedHeaders;
+}
+
+function csvErrorMessage(error) {
+  if (error.message.startsWith('Duplicate column name:') || error.message.startsWith('The CSV must')) return error.message;
+  if (error.code === 'CSV_RECORD_INCONSISTENT_COLUMNS' || error.code === 'CSV_RECORD_INCONSISTENT_FIELDS_LENGTH') {
+    return 'Some rows have a different number of values than the header. Check the CSV row separators and commas.';
+  }
+  if (error.code === 'CSV_MAX_RECORD_SIZE') return 'A CSV row is larger than the 1 MB per-row limit.';
+  if (error.code === 'CSV_QUOTE_NOT_CLOSED' || error.code === 'CSV_INVALID_CLOSING_QUOTE') {
+    return 'A quoted value is not formatted correctly. Check quotation marks in the CSV.';
+  }
+  if (error.code === 'CSV_INVALID_RECORD_LENGTH') return 'The CSV contains a row with an invalid number of values.';
+  return 'The CSV could not be read. Check that it has a header row and valid CSV formatting.';
+}
 
 function makeHistogram(values) {
   const minimum = values.reduce((current, value) => Math.min(current, value), Infinity);

@@ -62,13 +62,14 @@ function App() {
     event.target.value = '';
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.csv')) { setNotice('Please choose a CSV file.'); return; }
+    if (file.size > 10 * 1024 * 1024) { setNotice('This CSV is larger than the 10 MB upload limit.'); return; }
     setUploading(true);
     const form = new FormData();
     form.append('file', file);
     try {
       const response = await fetch(`${API_URL}/datasets/analyze`, { method: 'POST', headers: { Authorization: `Bearer ${session.token}` }, body: form });
-      if (!response.ok) throw new Error('API unavailable');
       const report = await response.json();
+      if (!response.ok) throw new Error(report.message || 'Upload failed.');
       if (!report.id) {
         setNotice('CSV analyzed, but not saved. Start MongoDB and set MONGODB_URI to save reports.');
         setUploading(false);
@@ -78,8 +79,8 @@ function App() {
       setDatasets((current) => [item, ...current]);
       setActive(item);
       setNotice(`${file.name} analyzed successfully.`);
-    } catch {
-      setNotice('Could not reach the API. Start the server with npm run dev, then upload again.');
+    } catch (error) {
+      setNotice(error.message === 'Failed to fetch' ? 'Could not reach the API. Start the server with npm run dev, then upload again.' : error.message);
     } finally { setUploading(false); }
   }
 
@@ -238,7 +239,7 @@ function ReportPanel({ dataset }) {
   const numericColumns = columns.filter((column) => column.type === 'numeric');
   const categoricalColumns = columns.filter((column) => column.type === 'categorical');
   const missingData = columns.map((column) => ({ name: shortName(column.name), missing: column.missingCount || 0 })).filter((column) => column.missing > 0);
-  return <section id="analysis-report" className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap report={report} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
+  return <section id="analysis-report" className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing{column.invalidCount ? ` · ${column.invalidCount} invalid` : ''} · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap report={report} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
 }
 
 function StatCard({ label, value, note, icon, tone, trend }) { return <div className="stat-card"><div className="stat-top"><div className={`stat-icon ${tone}`}>{icon}</div><span className="stat-trend"><ArrowUpRight size={13} />{trend}</span></div><div className="stat-value">{value}</div><div className="stat-label">{label}</div><div className="stat-note">{note}</div></div>; }
