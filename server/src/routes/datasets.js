@@ -1,8 +1,15 @@
 const express = require('express');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
+const Dataset = require('../models/Dataset');
+const requireAuth = require('../middleware/requireAuth');
+const mongoose = require('mongoose');
 
 const router = express.Router();
+router.use((req, res, next) => {
+  if (mongoose.connection.readyState !== 1) return res.status(503).json({ message: 'Database is unavailable. Start MongoDB and try again.' });
+  next();
+});
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -12,7 +19,16 @@ const upload = multer({
   },
 });
 
-router.post('/analyze', upload.single('file'), (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const datasets = await Dataset.find({ userId: req.userId }).sort({ createdAt: -1 }).select('-preview');
+    res.json(datasets);
+  } catch (error) {
+    res.status(500).json({ message: 'Could not load datasets.' });
+  }
+});
+
+router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Choose a CSV file to upload.' });
 
   try {
@@ -44,9 +60,37 @@ router.post('/analyze', upload.single('file'), (req, res) => {
     });
     const preview = records.slice(0, 8);
     const duplicateCount = records.length - new Set(records.map((row) => JSON.stringify(row))).size;
-    res.json({ fileName: req.file.originalname, rowCount: records.length, columnCount: columns.length, columns: columnSummary, duplicateCount, preview });
+    const report = { fileName: req.file.originalname, rowCount: records.length, columnCount: columns.length, columns: columnSummary, duplicateCount, preview };
+    if (mongooseReady()) {
+      const saved = await Dataset.create({ userId: req.userId, name: req.file.originalname, originalName: req.file.originalname, ...report });
+      report.id = saved.id;
+      report.createdAt = saved.createdAt;
+    } else report.saved = false;
+    res.json(report);
   } catch (error) {
     res.status(400).json({ message: 'The CSV could not be read. Check that it has a header row and valid CSV formatting.' });
+  }
+});
+
+router.patch('/:id', requireAuth, async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ message: 'Dataset name is required.' });
+  try {
+    const dataset = await Dataset.findOneAndUpdate({ _id: req.params.id, userId: req.userId }, { name }, { new: true, runValidators: true }).select('-preview');
+    if (!dataset) return res.status(404).json({ message: 'Dataset not found.' });
+    res.json(dataset);
+  } catch (error) {
+    res.status(400).json({ message: 'Could not rename this dataset.' });
+  }
+});
+
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const dataset = await Dataset.findOneAndDelete({ _id: req.params.id, userId: req.userId });
+    if (!dataset) return res.status(404).json({ message: 'Dataset not found.' });
+    res.json({ message: 'Dataset deleted.' });
+  } catch (error) {
+    res.status(400).json({ message: 'Could not delete this dataset.' });
   }
 });
 
@@ -56,5 +100,6 @@ router.use((error, req, res, next) => {
 });
 
 function round(value) { return Math.round(value * 100) / 100; }
+function mongooseReady() { return mongoose.connection.readyState === 1; }
 
 module.exports = router;
