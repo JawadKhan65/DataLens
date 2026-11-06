@@ -12,10 +12,17 @@ function App() {
   const [datasets, setDatasets] = useState([]);
   const [active, setActive] = useState(null);
   const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
   const [notice, setNotice] = useState('');
+  const [loadingDatasets, setLoadingDatasets] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [openingReport, setOpeningReport] = useState(false);
-  const visibleDatasets = useMemo(() => datasets.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())), [datasets, search]);
+  const visibleDatasets = useMemo(() => datasets.filter((item) => {
+    const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
+    const days = dateFilter === '7' ? 7 : dateFilter === '30' ? 30 : 0;
+    const isRecent = !days || !item.createdAt || Date.now() - new Date(item.createdAt).getTime() <= days * 24 * 60 * 60 * 1000;
+    return matchesSearch && isRecent;
+  }), [datasets, search, dateFilter]);
   const totalRows = datasets.reduce((sum, item) => sum + Number(item.rowCount || 0), 0);
   const activityRows = useMemo(() => makeActivityRows(datasets), [datasets]);
 
@@ -34,6 +41,7 @@ function App() {
 
   useEffect(() => {
     if (!session?.token) return;
+    setLoadingDatasets(true);
     fetch(`${API_URL}/datasets`, { headers: { Authorization: `Bearer ${session.token}` } })
       .then((response) => { if (!response.ok) throw new Error('API unavailable'); return response.json(); })
       .then((items) => {
@@ -41,7 +49,8 @@ function App() {
         setDatasets(formatted);
         setActive(formatted[0] || null);
       })
-      .catch(() => setNotice('Start the API and MongoDB to load saved datasets.'));
+      .catch(() => setNotice('Could not load saved datasets. Check that the API and MongoDB are running.'))
+      .finally(() => setLoadingDatasets(false));
   }, [session?.token]);
 
   async function uploadFile(event) {
@@ -72,6 +81,7 @@ function App() {
 
   async function deleteDataset(item) {
     if (!item.id) return;
+    if (!window.confirm(`Delete “${item.name}” and its saved report?`)) return;
     try {
       const response = await fetch(`${API_URL}/datasets/${item.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${session.token}` } });
       if (!response.ok) throw new Error('Delete failed');
@@ -84,7 +94,10 @@ function App() {
 
   async function selectDataset(item) {
     setActive(item);
-    if (item.report?.preview?.length || !item.id) return;
+    if (item.report?.preview?.length || !item.id) {
+      document.getElementById('analysis-report')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     setOpeningReport(true);
     try {
       const response = await fetch(`${API_URL}/datasets/${item.id}`, { headers: { Authorization: `Bearer ${session.token}` } });
@@ -92,6 +105,7 @@ function App() {
       const detail = formatDataset(await response.json());
       setDatasets((current) => current.map((dataset) => dataset.id === item.id ? detail : dataset));
       setActive(detail);
+      setTimeout(() => document.getElementById('analysis-report')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     } catch { setNotice('Could not open this report. Try again.'); }
     finally { setOpeningReport(false); }
   }
@@ -139,7 +153,7 @@ function App() {
           <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows in your latest saved datasets</div></div><div className="activity-total">{datasets.length} saved</div></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows per dataset</span></div>{activityRows.length ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={activityRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 9 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="rows" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={28} /></BarChart></ResponsiveContainer></div> : <div className="chart-empty">Upload a CSV to see activity here.</div>}</div>
           <QualityOverview datasets={datasets} />
         </section>
-        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><button className="filter-button">Last 30 days <ChevronDown size={14} /></button></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => renameDataset(item)} onDelete={() => deleteDataset(item)} />) : <div className="empty-search">{search ? `No datasets match “${search}”` : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
+        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className="filter-button" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => renameDataset(item)} onDelete={() => deleteDataset(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
         {openingReport && <div className="report-loading">Loading saved report…</div>}
         {active?.report && <ReportPanel dataset={active} />}
         <footer className="page-footer"><span>© 2024 DataLens, Inc.</span><span><a>Privacy</a><a>Terms</a><a>Status <i className="footer-status" /></a></span><span>Made for curious minds <span className="heart">♥</span></span></footer>
@@ -156,6 +170,7 @@ function formatDataset(item) {
     rows: Number(item.rowCount || 0).toLocaleString(),
     columnsCount: String(item.columnCount || 0),
     date: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Just now',
+    createdAt: item.createdAt,
     type: 'CSV',
     color,
     report: item.report || (item.preview ? item : null),
@@ -212,7 +227,7 @@ function ReportPanel({ dataset }) {
   const numericColumns = columns.filter((column) => column.type === 'numeric');
   const categoricalColumns = columns.filter((column) => column.type === 'categorical');
   const missingData = columns.map((column) => ({ name: shortName(column.name), missing: column.missingCount || 0 })).filter((column) => column.missing > 0);
-  return <section className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} rows={preview} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} rows={preview} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap columns={numericColumns} rows={preview} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
+  return <section id="analysis-report" className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} rows={preview} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} rows={preview} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap columns={numericColumns} rows={preview} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
 }
 
 function StatCard({ label, value, note, icon, tone, trend }) { return <div className="stat-card"><div className="stat-top"><div className={`stat-icon ${tone}`}>{icon}</div><span className="stat-trend"><ArrowUpRight size={13} />{trend}</span></div><div className="stat-value">{value}</div><div className="stat-label">{label}</div><div className="stat-note">{note}</div></div>; }
