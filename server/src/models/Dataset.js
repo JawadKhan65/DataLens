@@ -7,6 +7,8 @@ const datasetSchema = new mongoose.Schema({
   rowCount: { type: Number, default: 0 },
   columnCount: { type: Number, default: 0 },
   columns: { type: Array, default: [] },
+  correlationNames: { type: [String], default: [] },
+  correlationMatrix: { type: Array, default: [] },
   duplicateCount: { type: Number, default: 0 },
   preview: { type: Array, default: [] },
 }, { timestamps: true });

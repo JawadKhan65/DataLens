@@ -62,15 +62,21 @@ router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => 
         const middle = Math.floor(sorted.length / 2);
         const median = sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
         const variance = numericValues.reduce((sum, value) => sum + (value - mean) ** 2, 0) / numericValues.length;
-        Object.assign(result, { mean: round(mean), median: round(median), standardDeviation: round(Math.sqrt(variance)), min: sorted[0], max: sorted[sorted.length - 1] });
+        Object.assign(result, {
+          mean: round(mean), median: round(median), standardDeviation: round(Math.sqrt(variance)), min: sorted[0], max: sorted[sorted.length - 1],
+          histogram: makeHistogram(numericValues),
+        });
       } else {
         result.uniqueCount = new Set(presentValues).size;
+        result.topCategories = makeTopCategories(presentValues);
       }
       return result;
     });
     const preview = records.slice(0, 200);
     const duplicateCount = records.length - new Set(records.map((row) => JSON.stringify(row))).size;
-    const report = { fileName: req.file.originalname, rowCount: records.length, columnCount: columns.length, columns: columnSummary, duplicateCount, preview };
+    const numericNames = columnSummary.filter((column) => column.type === 'numeric').map((column) => column.name).slice(0, 6);
+    const correlationMatrix = numericNames.map((rowName) => numericNames.map((columnName) => calculateCorrelation(records, rowName, columnName)));
+    const report = { fileName: req.file.originalname, rowCount: records.length, columnCount: columns.length, columns: columnSummary, correlationNames: numericNames, correlationMatrix, duplicateCount, preview };
     if (mongooseReady()) {
       const saved = await Dataset.create({ userId: req.userId, name: req.file.originalname, originalName: req.file.originalname, ...report });
       report.id = saved.id;
@@ -111,5 +117,39 @@ router.use((error, req, res, next) => {
 
 function round(value) { return Math.round(value * 100) / 100; }
 function mongooseReady() { return mongoose.connection.readyState === 1; }
+
+function makeHistogram(values) {
+  const minimum = values.reduce((current, value) => Math.min(current, value), Infinity);
+  const maximum = values.reduce((current, value) => Math.max(current, value), -Infinity);
+  if (minimum === maximum) return [{ range: String(round(minimum)), count: values.length }];
+  const binCount = Math.min(12, Math.max(5, Math.ceil(Math.sqrt(values.length))));
+  const binSize = (maximum - minimum) / binCount;
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    range: `${round(minimum + index * binSize)}–${round(index === binCount - 1 ? maximum : minimum + (index + 1) * binSize)}`,
+    count: 0,
+  }));
+  values.forEach((value) => { bins[Math.min(binCount - 1, Math.floor((value - minimum) / binSize))].count += 1; });
+  return bins;
+}
+
+function makeTopCategories(values) {
+  const counts = new Map();
+  values.forEach((value) => counts.set(String(value), (counts.get(String(value)) || 0) + 1));
+  return [...counts.entries()].sort((first, second) => second[1] - first[1]).slice(0, 12).map(([name, count]) => ({ name, count }));
+}
+
+function calculateCorrelation(records, firstName, secondName) {
+  const pairs = records.map((row) => [row[firstName], row[secondName]])
+    .filter(([first, second]) => first !== '' && second !== '' && first !== null && second !== null)
+    .map(([first, second]) => [Number(first), Number(second)])
+    .filter(([first, second]) => Number.isFinite(first) && Number.isFinite(second));
+  if (pairs.length < 2) return null;
+  const firstMean = pairs.reduce((sum, pair) => sum + pair[0], 0) / pairs.length;
+  const secondMean = pairs.reduce((sum, pair) => sum + pair[1], 0) / pairs.length;
+  const numerator = pairs.reduce((sum, pair) => sum + (pair[0] - firstMean) * (pair[1] - secondMean), 0);
+  const firstSpread = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[0] - firstMean) ** 2, 0));
+  const secondSpread = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[1] - secondMean) ** 2, 0));
+  return firstSpread && secondSpread ? round(numerator / (firstSpread * secondSpread)) : null;
+}
 
 module.exports = router;

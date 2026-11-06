@@ -238,62 +238,34 @@ function ReportPanel({ dataset }) {
   const numericColumns = columns.filter((column) => column.type === 'numeric');
   const categoricalColumns = columns.filter((column) => column.type === 'categorical');
   const missingData = columns.map((column) => ({ name: shortName(column.name), missing: column.missingCount || 0 })).filter((column) => column.missing > 0);
-  return <section id="analysis-report" className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} rows={preview} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} rows={preview} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap columns={numericColumns} rows={preview} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
+  return <section id="analysis-report" className="panel report-panel"><div className="datasets-heading"><div><div className="panel-title">Analysis report</div><div className="panel-description">{dataset.name} · {Number(dataset.rowCount || 0).toLocaleString()} rows · {dataset.columnCount} columns · {report.duplicateCount || 0} duplicate rows</div></div><span className="report-badge"><Check size={13} /> Saved report</span></div><div className="report-columns">{columns.map((column) => <div className="report-column" key={column.name}><div className="report-column-heading"><b>{column.name}</b><span>{column.type}</span></div><div className="report-column-meta">{column.missingCount} missing · {column.type === 'numeric' ? `mean ${column.mean}, median ${column.median}` : `${column.uniqueCount} unique values`}</div>{column.type === 'numeric' && <div className="report-column-range">Range {column.min} – {column.max} <span>SD {column.standardDeviation}</span></div>}</div>)}</div><div className="visualization-grid">{numericColumns.map((column) => <NumericHistogram key={column.name} column={column} />)}{categoricalColumns.slice(0, 3).map((column) => <CategoryChart key={column.name} column={column} />)}{missingData.length > 0 && <MissingChart data={missingData} />}{numericColumns.length > 1 && <CorrelationHeatmap report={report} />}</div>{preview.length > 0 && <div className="preview-wrap"><div className="preview-title">First rows</div><div className="preview-table-wrap"><table className="preview-table"><thead><tr>{Object.keys(preview[0]).map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{preview.map((row, index) => <tr key={index}>{Object.values(row).map((value, cellIndex) => <td key={cellIndex}>{value === '' ? <span className="missing-value">Missing</span> : String(value)}</td>)}</tr>)}</tbody></table></div></div>}</section>;
 }
 
 function StatCard({ label, value, note, icon, tone, trend }) { return <div className="stat-card"><div className="stat-top"><div className={`stat-icon ${tone}`}>{icon}</div><span className="stat-trend"><ArrowUpRight size={13} />{trend}</span></div><div className="stat-value">{value}</div><div className="stat-label">{label}</div><div className="stat-note">{note}</div></div>; }
 function QualityRow({ label, value, percent, color }) { return <div className="quality-row"><div><span>{label}</span><b>{value}</b></div><div className="progress-track"><i className={color} style={{ width: percent }} /></div></div>; }
-function NumericHistogram({ column, rows }) {
-  const values = rows.map((row) => Number(row[column.name])).filter(Number.isFinite);
-  const bins = makeHistogram(values);
-  return <div className="visual-card"><div className="visual-heading"><b>{column.name}</b><span>Numeric distribution</span></div>{bins.length ? <ResponsiveContainer width="100%" height={155}><BarChart data={bins} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="count" fill="#695ce8" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer> : <div className="visual-empty">Preview does not contain numeric values for this column.</div>}</div>;
+function NumericHistogram({ column }) {
+  const bins = column.histogram || [];
+  return <div className="visual-card"><div className="visual-heading"><b>{column.name}</b><span>{column.totalCount?.toLocaleString()} rows</span></div>{bins.length ? <ResponsiveContainer width="100%" height={155}><BarChart data={bins} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="count" fill="#695ce8" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer> : <div className="visual-empty">No numeric values available to chart.</div>}</div>;
 }
 
-function CategoryChart({ column, rows }) {
-  const counts = {};
-  rows.forEach((row) => { const value = String(row[column.name] ?? '').trim(); if (value) counts[value] = (counts[value] || 0) + 1; });
-  const data = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name: name.length > 13 ? `${name.slice(0, 12)}…` : name, count }));
-  return <div className="visual-card"><div className="visual-heading"><b>{column.name}</b><span>Top categories</span></div>{data.length ? <ResponsiveContainer width="100%" height={155}><BarChart data={data} layout="vertical" margin={{ top: 2, right: 8, left: 4, bottom: 0 }}><CartesianGrid horizontal={false} stroke="#edf0f4" /><XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><YAxis type="category" dataKey="name" width={70} axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="count" fill="#7bbca2" radius={[0, 3, 3, 0]} /></BarChart></ResponsiveContainer> : <div className="visual-empty">Preview does not contain category values for this column.</div>}</div>;
+function CategoryChart({ column }) {
+  const data = (column.topCategories || []).map(({ name, count }) => ({ name: name.length > 13 ? `${name.slice(0, 12)}…` : name, count }));
+  return <div className="visual-card"><div className="visual-heading"><b>{column.name}</b><span>Top of {column.totalCount?.toLocaleString()} rows</span></div>{data.length ? <ResponsiveContainer width="100%" height={155}><BarChart data={data} layout="vertical" margin={{ top: 2, right: 8, left: 4, bottom: 0 }}><CartesianGrid horizontal={false} stroke="#edf0f4" /><XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><YAxis type="category" dataKey="name" width={70} axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="count" fill="#7bbca2" radius={[0, 3, 3, 0]} /></BarChart></ResponsiveContainer> : <div className="visual-empty">No category values available to chart.</div>}</div>;
 }
 
 function MissingChart({ data }) {
   return <div className="visual-card"><div className="visual-heading"><b>Missing values</b><span>Rows missing per column</span></div><ResponsiveContainer width="100%" height={155}><BarChart data={data} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9298a4', fontSize: 8 }} /><YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 8 }} /><Tooltip contentStyle={{ border: '1px solid #eceef2', borderRadius: 8, fontSize: 10 }} /><Bar dataKey="missing" fill="#e6a365" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div>;
 }
 
-function CorrelationHeatmap({ columns, rows }) {
-  const values = columns.slice(0, 6);
-  return <div className="visual-card"><div className="visual-heading"><b>Correlation heatmap</b><span>From the saved preview</span></div><div className="heatmap-wrap"><table className="heatmap"><thead><tr><th /><th>{values.map((column) => <span key={column.name} title={column.name}>{shortName(column.name)}</span>)}</th></tr></thead><tbody>{values.map((rowColumn) => <tr key={rowColumn.name}><th title={rowColumn.name}>{shortName(rowColumn.name)}</th>{values.map((column) => {
-    const correlation = calculateCorrelation(rows, rowColumn.name, column.name);
-    const strength = Math.abs(correlation);
+function CorrelationHeatmap({ report }) {
+  const values = report.correlationNames || [];
+  const matrix = report.correlationMatrix || [];
+  return <div className="visual-card"><div className="visual-heading"><b>Correlation heatmap</b><span>All dataset rows</span></div><div className="heatmap-wrap"><table className="heatmap"><thead><tr><th /><th>{values.map((name) => <span key={name} title={name}>{shortName(name)}</span>)}</th></tr></thead><tbody>{values.map((rowName, rowIndex) => <tr key={rowName}><th title={rowName}>{shortName(rowName)}</th>{values.map((columnName, columnIndex) => {
+    const correlation = matrix[rowIndex]?.[columnIndex];
+    const strength = Number.isFinite(correlation) ? Math.abs(correlation) : 0;
     const background = correlation >= 0 ? `rgba(104, 91, 225, ${0.08 + strength * 0.75})` : `rgba(224, 137, 108, ${0.08 + strength * 0.75})`;
-    return <td key={column.name} style={{ background }} title={`${rowColumn.name} / ${column.name}: ${correlation.toFixed(2)}`}>{Number.isFinite(correlation) ? correlation.toFixed(2) : '—'}</td>;
+    return <td key={columnName} style={{ background }} title={`${rowName} / ${columnName}: ${Number.isFinite(correlation) ? correlation.toFixed(2) : 'not available'}`}>{Number.isFinite(correlation) ? correlation.toFixed(2) : '—'}</td>;
   })}</tr>)}</tbody></table></div></div>;
-}
-
-function makeHistogram(values) {
-  if (!values.length) return [];
-  const low = Math.min(...values);
-  const high = Math.max(...values);
-  if (low === high) return [{ range: String(low), count: values.length }];
-  const binCount = Math.min(8, Math.max(4, Math.ceil(Math.sqrt(values.length))));
-  const size = (high - low) / binCount;
-  const bins = Array.from({ length: binCount }, (_, index) => ({
-    range: `${roundNumber(low + index * size)}–${roundNumber(index === binCount - 1 ? high : low + (index + 1) * size)}`,
-    count: 0,
-  }));
-  values.forEach((value) => { const index = Math.min(binCount - 1, Math.floor((value - low) / size)); bins[index].count += 1; });
-  return bins;
-}
-
-function calculateCorrelation(rows, firstName, secondName) {
-  const pairs = rows.map((row) => [Number(row[firstName]), Number(row[secondName])]).filter(([first, second]) => Number.isFinite(first) && Number.isFinite(second));
-  if (pairs.length < 2) return NaN;
-  const firstMean = pairs.reduce((sum, pair) => sum + pair[0], 0) / pairs.length;
-  const secondMean = pairs.reduce((sum, pair) => sum + pair[1], 0) / pairs.length;
-  const numerator = pairs.reduce((sum, pair) => sum + (pair[0] - firstMean) * (pair[1] - secondMean), 0);
-  const firstSpread = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[0] - firstMean) ** 2, 0));
-  const secondSpread = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[1] - secondMean) ** 2, 0));
-  return firstSpread && secondSpread ? numerator / (firstSpread * secondSpread) : NaN;
 }
 
 function shortName(name) { return name.length > 8 ? `${name.slice(0, 7)}…` : name; }
