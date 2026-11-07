@@ -21,3 +21,5 @@
 @media(max-width:590px){.table-footer{height:auto;min-height:42px;flex-wrap:wrap;padding:8px 0;gap:8px}.pagination-controls{order:3;width:100%;justify-content:center}.table-footer>button{margin-left:auto}}
 
 .export-button{height:27px;border:1px solid #e8eaf0;border-radius:5px;background:white;color:#6d63d6;padding:0 8px;display:inline-flex;align-items:center;gap:5px;font-size:8px;font-weight:600}.export-button:hover{background:#f7f6ff;border-color:#d9d5fb}.report-panel>.datasets-heading{gap:8px}.report-panel>.datasets-heading>.report-badge{margin-left:auto}@media(max-width:590px){.report-panel>.datasets-heading{flex-wrap:wrap}.report-panel>.datasets-heading>.report-badge{margin-left:0}}
+
+.password-control{position:relative;display:block}.password-control input{width:100%;padding-right:38px}.password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:25px;height:25px;border:0;border-radius:5px;background:transparent;color:#8b91a0;display:grid;place-items:center;cursor:pointer}.password-toggle:hover{background:#f3f2ff;color:#6255df}.password-hint{font-size:9px;font-weight:400;color:#a0784f}.password-hint.valid{color:#438968}
