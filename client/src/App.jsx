@@ -86,8 +86,8 @@ function App() {
   }, [session?.token, datasetPage, search, dateFilter]);
 
   async function uploadFile(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
+    const file = event?.target ? event.target.files?.[0] : event;
+    if (event?.target) event.target.value = '';
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.csv')) { setNotice('Please choose a CSV file.'); return; }
     if (file.size > 10 * 1024 * 1024) { setNotice('This CSV is larger than the 10 MB upload limit.'); return; }
@@ -118,6 +118,22 @@ function App() {
     } finally { setUploading(false); }
   }
 
+  function uploadSampleDataset() {
+    const sampleCsv = [
+      'product,category,units,unit_price,region',
+      'Notebook,Stationery,18,4.5,North',
+      'Desk Lamp,Home,7,22.99,South',
+      'Water Bottle,Outdoors,12,15.5,East',
+      'Pen Set,Stationery,25,6.25,West',
+      'Canvas Tote,Accessories,9,12.0,North',
+      'Notebook,Stationery,14,4.5,East',
+      'Desk Lamp,Home,,22.99,West',
+      'Water Bottle,Outdoors,8,,South',
+      'Plant Pot,Home,11,9.75,North',
+      'Pen Set,Stationery,20,6.25,South',
+    ].join('\n');
+    uploadFile(new File([sampleCsv], 'sample-store-sales.csv', { type: 'text/csv' }));
+  }
   async function deleteDataset(item) {
     if (!item.id) return;
     setSavingAction(true);
@@ -203,7 +219,7 @@ function App() {
           <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows in your latest saved datasets</div></div><div className="activity-total">{datasets.length} saved</div></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows per dataset</span></div>{activityRows.length ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={activityRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 9 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="rows" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={28} /></BarChart></ResponsiveContainer></div> : <div className="chart-empty">Upload a CSV to see activity here.</div>}</div>
           <QualityOverview datasets={datasets} />
         </section>}
-        {activeView !== 'reports' && <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{matchingDatasets}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => { setSearch(event.target.value); setDatasetPage(1); }} /></div><select className="filter-button" value={dateFilter} onChange={(event) => { setDateFilter(event.target.value); setDatasetPage(1); }} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing {matchingDatasets ? (datasetPage - 1) * 8 + 1 : 0}–{Math.min(datasetPage * 8, matchingDatasets)} of {matchingDatasets} matching datasets</span><div className="pagination-controls"><button disabled={datasetPage <= 1 || loadingDatasets} onClick={() => setDatasetPage((page) => page - 1)}>Previous</button><span>{datasetPage} / {pageCount}</span><button disabled={datasetPage >= pageCount || loadingDatasets} onClick={() => setDatasetPage((page) => page + 1)}>Next</button></div><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>}
+        {activeView !== 'reports' && <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{matchingDatasets}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => { setSearch(event.target.value); setDatasetPage(1); }} /></div><select className="filter-button" value={dateFilter} onChange={(event) => { setDateFilter(event.target.value); setDatasetPage(1); }} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : totalDatasets === 0 ? <div className="empty-state"><div className="empty-state-icon"><FileSpreadsheet size={19} /></div><b>Start with a sample dataset</b><span>See summaries, data quality checks, and charts with a small example CSV.</span><button className="sample-button" onClick={uploadSampleDataset} disabled={uploading}><FileSpreadsheet size={14} />{uploading ? 'Analyzing sample…' : 'Analyze sample data'}</button></div> : 'No datasets on this page.'}</div>}</div><div className="table-footer"><span>Showing {matchingDatasets ? (datasetPage - 1) * 8 + 1 : 0}–{Math.min(datasetPage * 8, matchingDatasets)} of {matchingDatasets} matching datasets</span><div className="pagination-controls"><button disabled={datasetPage <= 1 || loadingDatasets} onClick={() => setDatasetPage((page) => page - 1)}>Previous</button><span>{datasetPage} / {pageCount}</span><button disabled={datasetPage >= pageCount || loadingDatasets} onClick={() => setDatasetPage((page) => page + 1)}>Next</button></div><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>}
         {activeView === 'reports' && <ReportsList datasets={visibleDatasets} loading={loadingDatasets} page={datasetPage} pageCount={pageCount} onPage={setDatasetPage} onOpen={selectDataset} />}
 
         {openingReport && <div className="report-loading">Loading saved report…</div>}
