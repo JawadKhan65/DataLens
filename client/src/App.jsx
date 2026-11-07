@@ -86,6 +86,7 @@ function App() {
   }, [session?.token, datasetPage, search, dateFilter]);
 
   async function uploadFile(event) {
+    if (uploading) return;
     const file = event?.target ? event.target.files?.[0] : event;
     if (event?.target) event.target.value = '';
     if (!file) return;
@@ -106,6 +107,7 @@ function App() {
       const item = formatDataset(report);
       setDatasets((current) => [item, ...current].slice(0, 8));
       setTotalDatasets((current) => current + 1);
+      setMatchingDatasets((current) => current + 1);
       setTotalRows((current) => current + Number(item.rowCount || 0));
       setPageCount((current) => Math.max(current, Math.ceil((totalDatasets + 1) / 8)));
       setSearch('');
@@ -144,6 +146,9 @@ function App() {
       setDatasets(next);
       setTotalDatasets((current) => Math.max(0, current - 1));
       setTotalRows((current) => Math.max(0, current - Number(item.rowCount || 0)));
+      const remainingMatches = Math.max(0, matchingDatasets - 1);
+      setMatchingDatasets(remainingMatches);
+      setPageCount(Math.max(1, Math.ceil(remainingMatches / 8)));
       setPageCount(Math.max(1, Math.ceil((totalDatasets - 1) / 8)));
       if (next.length === 0 && datasetPage > 1) setDatasetPage((current) => current - 1);
       if (active?.id === item.id) setActive(next[0] || null);
