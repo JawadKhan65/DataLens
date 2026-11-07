@@ -28,9 +28,11 @@ router.get('/', requireAuth, async (req, res) => {
     const days = Number.parseInt(req.query.days, 10);
     if (search) filter.name = { $regex: escapeRegex(search), $options: 'i' };
     if ([7, 30].includes(days)) filter.createdAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+    const sortOptions = { newest: { createdAt: -1 }, oldest: { createdAt: 1 }, nameAsc: { name: 1 }, nameDesc: { name: -1 }, rowsDesc: { rowCount: -1, createdAt: -1 } };
+    const sort = sortOptions[req.query.sort] || sortOptions.newest;
 
     const [items, total, totalRowsResult] = await Promise.all([
-      Dataset.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).select('-preview'),
+      Dataset.find(filter).sort(sort).skip((page - 1) * limit).limit(limit).select('-preview'),
       Dataset.countDocuments(filter),
       Dataset.aggregate([{ $match: { userId: req.userId } }, { $group: { _id: null, rows: { $sum: '$rowCount' }, count: { $sum: 1 } } }]),
     ]);
