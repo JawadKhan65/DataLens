@@ -263,6 +263,7 @@ function formatDataset(item) {
   const color = ['mint', 'lavender', 'peach'][Math.abs((item.name || '').length) % 3];
   return {
     ...item,
+    id: item.id || String(item._id || ''),
     name: item.name || item.fileName || 'Untitled dataset',
     rows: Number(item.rowCount || 0).toLocaleString(),
     columnsCount: String(item.columnCount || 0),
