@@ -34,7 +34,7 @@ router.get('/', requireAuth, async (req, res) => {
     const [items, total, totalRowsResult] = await Promise.all([
       Dataset.find(filter).sort(sort).skip((page - 1) * limit).limit(limit).select('-preview'),
       Dataset.countDocuments(filter),
-      Dataset.aggregate([{ $match: { userId: req.userId } }, { $group: { _id: null, rows: { $sum: '$rowCount' }, count: { $sum: 1 } } }]),
+      Dataset.aggregate([{ $match: { userId: new mongoose.Types.ObjectId(req.userId) } }, { $group: { _id: null, rows: { $sum: '$rowCount' }, count: { $sum: 1 } } }]),
     ]);
     const totals = totalRowsResult[0] || { rows: 0, count: 0 };
     res.json({

@@ -1,0 +1,11 @@
+product,category,units,unit_price,region
+Notebook,Stationery,18,4.50,North
+Desk Lamp,Home,7,22.99,South
+Water Bottle,Outdoors,12,15.50,East
+Pen Set,Stationery,25,6.25,West
+Canvas Tote,Accessories,9,12.00,North
+Notebook,Stationery,14,4.50,East
+Desk Lamp,Home,,22.99,West
+Water Bottle,Outdoors,8,,South
+Plant Pot,Home,11,9.75,North
+Pen Set,Stationery,20,6.25,South
