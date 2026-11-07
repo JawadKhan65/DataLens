@@ -23,6 +23,8 @@ function App() {
   const [notice, setNotice] = useState('');
   const [loadingDatasets, setLoadingDatasets] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadingFileName, setUploadingFileName] = useState('');
+  const [noticeError, setNoticeError] = useState(false);
   const [openingReport, setOpeningReport] = useState(false);
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -91,9 +93,11 @@ function App() {
     const file = event?.target ? event.target.files?.[0] : event;
     if (event?.target) event.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.csv')) { setNotice('Please choose a CSV file.'); return; }
-    if (file.size > 10 * 1024 * 1024) { setNotice('This CSV is larger than the 10 MB upload limit.'); return; }
+    if (!file.name.toLowerCase().endsWith('.csv')) { setNoticeError(true); setNotice('Please choose a CSV file.'); return; }
+    if (file.size > 10 * 1024 * 1024) { setNoticeError(true); setNotice('This CSV is larger than the 10 MB upload limit.'); return; }
     setUploading(true);
+    setUploadingFileName(file.name);
+    setNoticeError(false);
     const form = new FormData();
     form.append('file', file);
     try {
@@ -117,8 +121,9 @@ function App() {
       setActive(item);
       setNotice(`${file.name} analyzed successfully.`);
     } catch (error) {
+      setNoticeError(true);
       setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : error.message === 'Failed to fetch' ? 'Could not reach the API. Start the server with npm run dev, then upload again.' : error.message);
-    } finally { setUploading(false); }
+    } finally { setUploading(false); setUploadingFileName(''); }
   }
 
   function uploadSampleDataset() {
@@ -211,8 +216,8 @@ function App() {
     <main className="main-area">
       <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> <b>{activeView === 'overview' ? 'Overview' : activeView === 'datasets' ? 'My datasets' : 'Reports'}</b></div><div className="top-actions"><div className="status-pill"><span /> All systems operational</div><button className="icon-button"><Bell size={18} /><i /></button><div className="top-avatar">{session.user.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div></div></header>
       <div className="content">
-        <section className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</div><h1>{activeView === 'overview' ? `Good morning, ${session.user.name.split(' ')[0]}` : activeView === 'datasets' ? 'Your datasets' : 'Saved reports'} <span className="wave">✳</span></h1><p className="subheading">{activeView === 'overview' ? "Here's what's happening with your data today." : activeView === 'datasets' ? 'Browse, search, and manage your uploaded files.' : 'Open an analysis report or download a copy.'}</p></div><label className={`primary-button ${uploading ? 'is-loading' : ''}`}><Plus size={17} />{uploading ? 'Analyzing…' : 'Upload dataset'}<input type="file" accept=".csv,text/csv" onChange={uploadFile} /></label></section>
-        {notice && <div className="notice"><Check size={15} />{notice}<button onClick={() => setNotice('')}><X size={15} /></button></div>}
+        <section className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</div><h1>{activeView === 'overview' ? `Good morning, ${session.user.name.split(' ')[0]}` : activeView === 'datasets' ? 'Your datasets' : 'Saved reports'} <span className="wave">✳</span></h1><p className="subheading">{activeView === 'overview' ? "Here's what's happening with your data today." : activeView === 'datasets' ? 'Browse, search, and manage your uploaded files.' : 'Open an analysis report or download a copy.'}</p></div><label className={`primary-button ${uploading ? 'is-loading' : ''}`}><Plus size={17} />{uploading ? <>Analyzing {uploadingFileName}…</> : 'Upload dataset'}<input type="file" accept=".csv,text/csv" onChange={uploadFile} /></label></section>
+        {notice && <div className={`notice ${noticeError ? 'error' : ''}`}>{noticeError ? <X size={15} /> : <Check size={15} />}{notice}<button onClick={() => { setNotice(''); setNoticeError(false); }}><X size={15} /></button></div>}
         {activeView === 'overview' && <>
         <section className="stats-grid">
           <StatCard label="Total datasets" value={String(totalDatasets).padStart(2, '0')} note="Saved in your workspace" icon={<Database size={17} />} tone="violet" trend="Saved reports" />
