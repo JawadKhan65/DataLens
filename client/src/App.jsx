@@ -10,6 +10,11 @@ function App() {
   });
   const [authMode, setAuthMode] = useState('login');
   const [datasets, setDatasets] = useState([]);
+  const [totalDatasets, setTotalDatasets] = useState(0);
+  const [matchingDatasets, setMatchingDatasets] = useState(0);
+  const [totalRows, setTotalRows] = useState(0);
+  const [datasetPage, setDatasetPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
   const [active, setActive] = useState(null);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -21,13 +26,7 @@ function App() {
   const [renameValue, setRenameValue] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [savingAction, setSavingAction] = useState(false);
-  const visibleDatasets = useMemo(() => datasets.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
-    const days = dateFilter === '7' ? 7 : dateFilter === '30' ? 30 : 0;
-    const isRecent = !days || !item.createdAt || Date.now() - new Date(item.createdAt).getTime() <= days * 24 * 60 * 60 * 1000;
-    return matchesSearch && isRecent;
-  }), [datasets, search, dateFilter]);
-  const totalRows = datasets.reduce((sum, item) => sum + Number(item.rowCount || 0), 0);
+  const visibleDatasets = datasets;
   const activityRows = useMemo(() => makeActivityRows(datasets), [datasets]);
 
   function saveSession(nextSession) {
@@ -53,17 +52,24 @@ function App() {
 
   useEffect(() => {
     if (!session?.token) return;
+    const controller = new AbortController();
     setLoadingDatasets(true);
-    apiRequest('/datasets')
+    const params = new URLSearchParams({ page: String(datasetPage), limit: '8', search, days: dateFilter });
+    apiRequest(`/datasets?${params}`, { signal: controller.signal })
       .then((response) => { if (!response.ok) throw new Error('API unavailable'); return response.json(); })
-      .then((items) => {
-        const formatted = items.map(formatDataset);
+      .then((result) => {
+        const formatted = result.items.map(formatDataset);
         setDatasets(formatted);
-        setActive(formatted[0] || null);
+        setTotalDatasets(result.totalDatasets);
+        setMatchingDatasets(result.total);
+        setTotalRows(result.totalRows);
+        setPageCount(result.pageCount);
+        setActive((current) => formatted.find((item) => item.id === current?.id) || formatted[0] || null);
       })
-      .catch((error) => setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not load saved datasets. Check that the API and MongoDB are running.'))
-      .finally(() => setLoadingDatasets(false));
-  }, [session?.token]);
+      .catch((error) => { if (error.name !== 'AbortError') setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not load saved datasets. Check that the API and MongoDB are running.'); })
+      .finally(() => { if (!controller.signal.aborted) setLoadingDatasets(false); });
+    return () => controller.abort();
+  }, [session?.token, datasetPage, search, dateFilter]);
 
   async function uploadFile(event) {
     const file = event.target.files?.[0];
@@ -84,7 +90,13 @@ function App() {
         return;
       }
       const item = formatDataset(report);
-      setDatasets((current) => [item, ...current]);
+      setDatasets((current) => [item, ...current].slice(0, 8));
+      setTotalDatasets((current) => current + 1);
+      setTotalRows((current) => current + Number(item.rowCount || 0));
+      setPageCount((current) => Math.max(current, Math.ceil((totalDatasets + 1) / 8)));
+      setSearch('');
+      setDateFilter('all');
+      setDatasetPage(1);
       setActive(item);
       setNotice(`${file.name} analyzed successfully.`);
     } catch (error) {
@@ -100,6 +112,10 @@ function App() {
       if (!response.ok) throw new Error('Delete failed');
       const next = datasets.filter((dataset) => dataset.id !== item.id);
       setDatasets(next);
+      setTotalDatasets((current) => Math.max(0, current - 1));
+      setTotalRows((current) => Math.max(0, current - Number(item.rowCount || 0)));
+      setPageCount(Math.max(1, Math.ceil((totalDatasets - 1) / 8)));
+      if (next.length === 0 && datasetPage > 1) setDatasetPage((current) => current - 1);
       if (active?.id === item.id) setActive(next[0] || null);
       setNotice(`${item.name} deleted.`);
       setDeleteTarget(null);
@@ -162,16 +178,16 @@ function App() {
         <section className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</div><h1>Good morning, {session.user.name.split(' ')[0]} <span className="wave">✳</span></h1><p className="subheading">Here's what's happening with your data today.</p></div><label className={`primary-button ${uploading ? 'is-loading' : ''}`}><Plus size={17} />{uploading ? 'Analyzing…' : 'Upload dataset'}<input type="file" accept=".csv,text/csv" onChange={uploadFile} /></label></section>
         {notice && <div className="notice"><Check size={15} />{notice}<button onClick={() => setNotice('')}><X size={15} /></button></div>}
         <section className="stats-grid">
-          <StatCard label="Total datasets" value={String(datasets.length).padStart(2, '0')} note="Saved in your workspace" icon={<Database size={17} />} tone="violet" trend="Saved reports" />
+          <StatCard label="Total datasets" value={String(totalDatasets).padStart(2, '0')} note="Saved in your workspace" icon={<Database size={17} />} tone="violet" trend="Saved reports" />
           <StatCard label="Rows analyzed" value={totalRows.toLocaleString()} note="Across saved datasets" icon={<Table2 size={17} />} tone="blue" trend="All time" />
-          <StatCard label="Reports generated" value={String(datasets.length)} note="Ready to revisit" icon={<FileText size={17} />} tone="orange" trend="Saved reports" />
+          <StatCard label="Reports generated" value={String(totalDatasets)} note="Ready to revisit" icon={<FileText size={17} />} tone="orange" trend="Saved reports" />
           <StatCard label="Data quality" value={datasets.length ? `${Math.round(datasets.reduce((sum, item) => sum + (item.report?.columns?.length ? item.report.columns.reduce((colSum, col) => colSum + (1 - col.missingCount / Math.max(item.rowCount, 1)), 0) / item.report.columns.length : 1), 0) / datasets.length * 100)}%` : '—'} note="Average completeness" icon={<ShieldCheck size={17} />} tone="green" trend="From reports" />
         </section>
         <section className="middle-grid">
           <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows in your latest saved datasets</div></div><div className="activity-total">{datasets.length} saved</div></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows per dataset</span></div>{activityRows.length ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={activityRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 9 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="rows" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={28} /></BarChart></ResponsiveContainer></div> : <div className="chart-empty">Upload a CSV to see activity here.</div>}</div>
           <QualityOverview datasets={datasets} />
         </section>
-        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{datasets.length}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => setSearch(event.target.value)} /></div><select className="filter-button" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing <b>{visibleDatasets.length}</b> of <b>{datasets.length}</b> datasets</span><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
+        <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{matchingDatasets}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => { setSearch(event.target.value); setDatasetPage(1); }} /></div><select className="filter-button" value={dateFilter} onChange={(event) => { setDateFilter(event.target.value); setDatasetPage(1); }} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : 'No datasets yet. Upload a CSV to get started.'}</div>}</div><div className="table-footer"><span>Showing {matchingDatasets ? (datasetPage - 1) * 8 + 1 : 0}–{Math.min(datasetPage * 8, matchingDatasets)} of {matchingDatasets} matching datasets</span><div className="pagination-controls"><button disabled={datasetPage <= 1 || loadingDatasets} onClick={() => setDatasetPage((page) => page - 1)}>Previous</button><span>{datasetPage} / {pageCount}</span><button disabled={datasetPage >= pageCount || loadingDatasets} onClick={() => setDatasetPage((page) => page + 1)}>Next</button></div><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>
         {openingReport && <div className="report-loading">Loading saved report…</div>}
         {active?.report && <ReportPanel dataset={active} />}
         {renameTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingAction) setRenameTarget(null); }}><section className="action-modal" role="dialog" aria-modal="true" aria-labelledby="rename-title"><button className="modal-close" aria-label="Close" onClick={() => setRenameTarget(null)}><X size={17} /></button><div className="modal-icon rename-icon"><FileText size={17} /></div><h2 id="rename-title">Rename dataset</h2><p>Choose a clear name for this saved dataset.</p><label className="modal-label">Dataset name<input autoFocus maxLength={100} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') renameDataset(renameTarget); }} /></label><div className="modal-actions"><button className="secondary-action" onClick={() => setRenameTarget(null)} disabled={savingAction}>Cancel</button><button className="confirm-action" onClick={() => renameDataset(renameTarget)} disabled={savingAction || !renameValue.trim()}>{savingAction ? 'Saving…' : 'Save name'}</button></div></section></div>}

@@ -21,8 +21,28 @@ const upload = multer({
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const datasets = await Dataset.find({ userId: req.userId }).sort({ createdAt: -1 }).select('-preview');
-    res.json(datasets.map((dataset) => ({ ...dataset.toObject(), reportAvailable: true })));
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 8));
+    const filter = { userId: req.userId };
+    const search = String(req.query.search || '').trim().slice(0, 100);
+    const days = Number.parseInt(req.query.days, 10);
+    if (search) filter.name = { $regex: escapeRegex(search), $options: 'i' };
+    if ([7, 30].includes(days)) filter.createdAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+
+    const [items, total, totalRowsResult] = await Promise.all([
+      Dataset.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).select('-preview'),
+      Dataset.countDocuments(filter),
+      Dataset.aggregate([{ $match: { userId: req.userId } }, { $group: { _id: null, rows: { $sum: '$rowCount' }, count: { $sum: 1 } } }]),
+    ]);
+    const totals = totalRowsResult[0] || { rows: 0, count: 0 };
+    res.json({
+      items: items.map((dataset) => ({ ...dataset.toObject(), reportAvailable: true })),
+      total,
+      page,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+      totalDatasets: totals.count,
+      totalRows: totals.rows,
+    });
   } catch (error) {
     res.status(500).json({ message: 'Could not load datasets.' });
   }
@@ -126,6 +146,7 @@ router.use((error, req, res, next) => {
 
 function round(value) { return Math.round(value * 100) / 100; }
 function mongooseReady() { return mongoose.connection.readyState === 1; }
+function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 function validateHeaders(headers) {
   const cleanedHeaders = headers.map((header) => String(header || '').trim());
