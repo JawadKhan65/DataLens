@@ -29,3 +29,5 @@
 :focus-visible{outline:2px solid #7569eb;outline-offset:2px}.dataset-row:focus-visible{outline:2px solid #7569eb;outline-offset:-2px;position:relative;z-index:1}.dataset-row:focus-visible .row-menu{opacity:1}.password-toggle:focus-visible{outline-offset:0}
 
 .notice.error{border-color:#f1ded9;background:#fff7f4;color:#bc6854}.primary-button{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.primary-button.is-loading{cursor:wait}
+
+.status-pill.status-warning{border-color:#f0dfd2;color:#a57b57}.status-pill.status-warning span{background:#e4a15d}.status-pill span{flex:none}

@@ -25,6 +25,7 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [uploadingFileName, setUploadingFileName] = useState('');
   const [noticeError, setNoticeError] = useState(false);
+  const [serviceStatus, setServiceStatus] = useState('checking');
   const [openingReport, setOpeningReport] = useState(false);
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState('');
@@ -32,6 +33,21 @@ function App() {
   const [savingAction, setSavingAction] = useState(false);
   const visibleDatasets = datasets;
   const activityRows = useMemo(() => makeActivityRows(datasets), [datasets]);
+  useEffect(() => {
+    let active = true;
+    const checkHealth = async () => {
+      try {
+        const response = await fetch(`${API_URL.replace(/\/$/, '')}/health`);
+        const result = await response.json();
+        if (active) setServiceStatus(response.ok && result.database === 'connected' ? 'ok' : 'database');
+      } catch {
+        if (active) setServiceStatus('offline');
+      }
+    };
+    checkHealth();
+    const interval = window.setInterval(checkHealth, 30000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
 
   function saveSession(nextSession) {
     localStorage.setItem('datalens-session', JSON.stringify(nextSession));
@@ -214,7 +230,7 @@ function App() {
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> <b>{activeView === 'overview' ? 'Overview' : activeView === 'datasets' ? 'My datasets' : 'Reports'}</b></div><div className="top-actions"><div className="status-pill"><span /> All systems operational</div><button className="icon-button"><Bell size={18} /><i /></button><div className="top-avatar">{session.user.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div></div></header>
+      <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> <b>{activeView === 'overview' ? 'Overview' : activeView === 'datasets' ? 'My datasets' : 'Reports'}</b></div><div className="top-actions"><div className={`status-pill ${serviceStatus === 'database' || serviceStatus === 'offline' ? 'status-warning' : ''}`}><span />{serviceStatus === 'checking' ? 'Checking systems…' : serviceStatus === 'ok' ? 'All systems operational' : serviceStatus === 'database' ? 'Database unavailable' : 'API unavailable'}</div><button className="icon-button"><Bell size={18} /><i /></button><div className="top-avatar">{session.user.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div></div></header>
       <div className="content">
         <section className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</div><h1>{activeView === 'overview' ? `Good morning, ${session.user.name.split(' ')[0]}` : activeView === 'datasets' ? 'Your datasets' : 'Saved reports'} <span className="wave">✳</span></h1><p className="subheading">{activeView === 'overview' ? "Here's what's happening with your data today." : activeView === 'datasets' ? 'Browse, search, and manage your uploaded files.' : 'Open an analysis report or download a copy.'}</p></div><label className={`primary-button ${uploading ? 'is-loading' : ''}`}><Plus size={17} />{uploading ? <>Analyzing {uploadingFileName}…</> : 'Upload dataset'}<input type="file" accept=".csv,text/csv" onChange={uploadFile} /></label></section>
         {notice && <div className={`notice ${noticeError ? 'error' : ''}`}>{noticeError ? <X size={15} /> : <Check size={15} />}{notice}<button onClick={() => { setNotice(''); setNoticeError(false); }}><X size={15} /></button></div>}

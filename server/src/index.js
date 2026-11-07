@@ -22,7 +22,11 @@ app.use(helmet({
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json({ limit: '100kb' }));
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', message: 'DataLens API is running' }));
+app.get('/api/health', (req, res) => {
+  const database = mongoose.connection.readyState === 1 ? 'connected' : 'unavailable';
+  const status = database === 'connected' ? 'ok' : 'degraded';
+  res.status(database === 'connected' ? 200 : 503).json({ status, database, message: 'DataLens API is running' });
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/datasets', datasetRoutes);
 
