@@ -368,7 +368,11 @@ function downloadColumnSummary(dataset) {
   const csv = [headings, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
   downloadFile(`${fileBaseName(dataset.name)}-column-summary.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
 }
-function csvCell(value) { return `"${String(value ?? '').replaceAll('"', '""')}"`; }
+function csvCell(value) {
+  const text = String(value ?? '');
+  const safeText = typeof value === 'string' && /^[\u0000-\u0020]*[=+@-]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
 function fileBaseName(name) { return name.replace(/\.csv$/i, '').replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || 'dataset'; }
 function downloadFile(fileName, contents, type) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
