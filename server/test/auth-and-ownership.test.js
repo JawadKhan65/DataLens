@@ -39,6 +39,16 @@ async function register(name, email) {
   return response;
 }
 
+async function uploadCsv(token, fileName, contents) {
+  const form = new FormData();
+  form.append('file', new Blob([contents], { type: 'text/csv' }), fileName);
+  return fetch(`${baseUrl}/api/datasets/analyze`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+}
+
 test('dataset routes require a valid signed-in user', async () => {
   const response = await fetch(`${baseUrl}/api/datasets`);
   assert.equal(response.status, 401);
@@ -113,4 +123,59 @@ test('duplicate signups are rejected without returning account details', async (
   assert.equal(first.status, 201);
   assert.equal(second.status, 409);
   assert.deepEqual(await second.json(), { message: 'An account with this email already exists.' });
+});
+
+test('CSV analysis handles numeric threshold, missing and invalid values', async () => {
+  const signup = await register('CSV Test User', 'csv-analysis@example.com');
+  const session = await signup.json();
+  const response = await uploadCsv(session.token, 'edge-cases.csv', [
+    'name,value,group',
+    'A,1,x',
+    'B,3,y',
+    'C,5,x',
+    'D,bad,y',
+    'E,9,z',
+    'F,,x',
+  ].join('\n'));
+
+  assert.equal(response.status, 200);
+  const report = await response.json();
+  const valueColumn = report.columns.find((column) => column.name === 'value');
+  assert.equal(report.rowCount, 6);
+  assert.equal(report.columnCount, 3);
+  assert.equal(valueColumn.type, 'numeric');
+  assert.equal(valueColumn.missingCount, 2);
+  assert.equal(valueColumn.invalidCount, 1);
+  assert.equal(valueColumn.mean, 4.5);
+  assert.equal(valueColumn.median, 4);
+  assert.equal(valueColumn.min, 1);
+  assert.equal(valueColumn.max, 9);
+  assert.equal(valueColumn.standardDeviation, 2.96);
+  assert.equal(report.preview.length, 6);
+});
+
+test('CSV upload gives clear errors for empty data, duplicate headers, and uneven rows', async () => {
+  const signup = await register('CSV Validation User', 'csv-validation@example.com');
+  const session = await signup.json();
+
+  const emptyData = await uploadCsv(session.token, 'empty.csv', 'name,value\n');
+  assert.equal(emptyData.status, 400);
+  assert.match((await emptyData.json()).message, /no data rows/i);
+
+  const duplicateHeaders = await uploadCsv(session.token, 'duplicates.csv', 'name,name\nA,B\n');
+  assert.equal(duplicateHeaders.status, 400);
+  assert.match((await duplicateHeaders.json()).message, /duplicate column name/i);
+
+  const unevenRows = await uploadCsv(session.token, 'uneven.csv', 'name,value\nA,1\nB\n');
+  assert.equal(unevenRows.status, 400);
+  assert.match((await unevenRows.json()).message, /different number of values/i);
+});
+
+test('upload rejects files without a CSV filename', async () => {
+  const signup = await register('File Type User', 'file-type@example.com');
+  const session = await signup.json();
+  const response = await uploadCsv(session.token, 'notes.txt', 'name,value\nA,1\n');
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).message, 'Only CSV files are allowed.');
 });
