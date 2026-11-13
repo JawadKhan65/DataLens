@@ -31,3 +31,30 @@
 .notice.error{border-color:#f1ded9;background:#fff7f4;color:#bc6854}.primary-button{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.primary-button.is-loading{cursor:wait}
 
 .status-pill.status-warning{border-color:#f0dfd2;color:#a57b57}.status-pill.status-warning span{background:#e4a15d}.status-pill span{flex:none}
+
+@media(max-width:590px){
+  .sidebar{inset:auto 0 0;width:100%;height:62px;flex-direction:row;align-items:center;padding:0 8px;gap:4px;border-right:0;border-top:1px solid #eceef2;box-shadow:0 -4px 16px #2024310b}
+  .sidebar>.brand,.sidebar>.workspace-switch,.sidebar>.nav-caption,.sidebar>.side-divider,.sidebar>nav.main-nav:last-of-type{display:none}
+  .sidebar>nav.main-nav:first-of-type{display:flex;flex:1;justify-content:space-around;gap:2px}
+  .sidebar .nav-item,.sidebar .nav-item.active,.sidebar .nav-item:not(.active){min-width:58px;flex-direction:column;justify-content:center;gap:3px;padding:5px 4px;font-size:8px!important}
+  .sidebar .nav-item svg{width:17px;height:17px}
+  .sidebar .nav-count{display:none}
+  .sidebar-bottom{margin:0;flex:none}
+  .sidebar-bottom .upgrade-card{display:none}
+  .sidebar .profile-button{width:auto;margin:0;padding:0 4px;border:0;display:flex;justify-content:center}
+  .sidebar .profile-avatar,.sidebar .profile-copy{display:none}
+  .sidebar .signout-label{font-size:8px}
+  .main-area{margin-left:0;padding-bottom:66px}
+  .content{padding-bottom:10px}
+  #analysis-report{scroll-margin-top:12px;scroll-margin-bottom:70px}
+  .action-modal{max-height:calc(100dvh - 24px);overflow-y:auto}
+}
+@media(max-width:380px){
+  .content{padding-left:10px;padding-right:10px}
+  .stats-grid{gap:7px}
+  .stat-card{padding:10px;min-width:0}
+  .stat-value{font-size:19px}
+  .report-columns{grid-template-columns:1fr}
+  .table-header,.dataset-row{grid-template-columns:minmax(105px,1.6fr) .4fr .45fr 20px;column-gap:5px}
+  .datasets-panel{padding-left:9px;padding-right:9px}
+}
