@@ -58,3 +58,5 @@
   .table-header,.dataset-row{grid-template-columns:minmax(105px,1.6fr) .4fr .45fr 20px;column-gap:5px}
   .datasets-panel{padding-left:9px;padding-right:9px}
 }
+
+.load-error{min-height:130px;padding:22px 14px;display:grid;justify-items:center;align-content:center;gap:7px;text-align:center}.load-error>b{font-size:11px;color:#855b4c}.load-error>span{font-size:9px;color:#9298a3;line-height:1.5}.retry-button{height:29px;margin-top:3px;padding:0 11px;border:1px solid #eadfdb;border-radius:6px;background:#fff;color:#9b5d4b;font-size:9px;font-weight:600}.retry-button:hover{background:#fff7f4}.retry-button:focus-visible{outline-color:#bd7964}

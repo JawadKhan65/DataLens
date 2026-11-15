@@ -20,11 +20,13 @@ function App() {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
-  const [notice, setNotice] = useState('');
+  const [notice, setNoticeText] = useState('');
+  const [noticeError, setNoticeError] = useState(false);
   const [loadingDatasets, setLoadingDatasets] = useState(true);
+  const [datasetError, setDatasetError] = useState(false);
+  const [datasetReload, setDatasetReload] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadingFileName, setUploadingFileName] = useState('');
-  const [noticeError, setNoticeError] = useState(false);
   const [serviceStatus, setServiceStatus] = useState('checking');
   const [openingReport, setOpeningReport] = useState(false);
   const [renameTarget, setRenameTarget] = useState(null);
@@ -33,6 +35,11 @@ function App() {
   const [savingAction, setSavingAction] = useState(false);
   const visibleDatasets = datasets;
   const activityRows = useMemo(() => makeActivityRows(datasets), [datasets]);
+
+  function setNotice(message, isError = false) {
+    setNoticeText(message);
+    setNoticeError(isError);
+  }
   useEffect(() => {
     let active = true;
     const checkHealth = async () => {
@@ -87,6 +94,7 @@ function App() {
     if (!session?.token) return;
     const controller = new AbortController();
     setLoadingDatasets(true);
+    setDatasetError(false);
     const params = new URLSearchParams({ page: String(datasetPage), limit: '8', search, days: dateFilter, sort: sortBy });
     apiRequest(`/datasets?${params}`, { signal: controller.signal })
       .then((response) => { if (!response.ok) throw new Error('API unavailable'); return response.json(); })
@@ -98,22 +106,27 @@ function App() {
         setTotalRows(result.totalRows);
         setPageCount(result.pageCount);
         setActive((current) => formatted.find((item) => item.id === current?.id) || formatted[0] || null);
+        setDatasetError(false);
       })
-      .catch((error) => { if (error.name !== 'AbortError') setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not load saved datasets. Check that the API and MongoDB are running.'); })
+      .catch((error) => { if (error.name !== 'AbortError') { setDatasetError(true); setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not load saved datasets. Check that the API and MongoDB are running.', true); } })
       .finally(() => { if (!controller.signal.aborted) setLoadingDatasets(false); });
     return () => controller.abort();
-  }, [session?.token, datasetPage, search, dateFilter, sortBy]);
+  }, [session?.token, datasetPage, search, dateFilter, sortBy, datasetReload]);
+
+  function retryDatasetLoad() {
+    setNotice('');
+    setDatasetReload((current) => current + 1);
+  }
 
   async function uploadFile(event) {
     if (uploading) return;
     const file = event?.target ? event.target.files?.[0] : event;
     if (event?.target) event.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.csv')) { setNoticeError(true); setNotice('Please choose a CSV file.'); return; }
-    if (file.size > 10 * 1024 * 1024) { setNoticeError(true); setNotice('This CSV is larger than the 10 MB upload limit.'); return; }
+    if (!file.name.toLowerCase().endsWith('.csv')) { setNotice('Please choose a CSV file.', true); return; }
+    if (file.size > 10 * 1024 * 1024) { setNotice('This CSV is larger than the 10 MB upload limit.', true); return; }
     setUploading(true);
     setUploadingFileName(file.name);
-    setNoticeError(false);
     const form = new FormData();
     form.append('file', file);
     try {
@@ -137,8 +150,7 @@ function App() {
       setActive(item);
       setNotice(`${file.name} analyzed successfully.`);
     } catch (error) {
-      setNoticeError(true);
-      setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : error.message === 'Failed to fetch' ? 'Could not reach the API. Start the server with npm run dev, then upload again.' : error.message);
+      setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : error.message === 'Failed to fetch' ? 'Could not reach the API. Start the server with npm run dev, then upload again.' : error.message, true);
     } finally { setUploading(false); setUploadingFileName(''); }
   }
 
@@ -176,7 +188,7 @@ function App() {
       if (active?.id === item.id) setActive(next[0] || null);
       setNotice(`${item.name} deleted.`);
       setDeleteTarget(null);
-    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not delete this dataset.'); }
+    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not delete this dataset.', true); }
     finally { setSavingAction(false); }
   }
 
@@ -194,7 +206,7 @@ function App() {
       setDatasets((current) => current.map((dataset) => dataset.id === item.id ? detail : dataset));
       setActive(detail);
       setTimeout(() => document.getElementById('analysis-report')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
-    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not open this report. Try again.'); }
+    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not open this report. Try again.', true); }
     finally { setOpeningReport(false); }
   }
 
@@ -212,7 +224,7 @@ function App() {
       if (active?.id === item.id) setActive(updated);
       setNotice('Dataset renamed.');
       setRenameTarget(null);
-    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not rename this dataset.'); }
+    } catch (error) { setNotice(error.message === 'SESSION_EXPIRED' ? 'Your session expired. Sign in again to continue.' : 'Could not rename this dataset.', true); }
     finally { setSavingAction(false); }
   }
 
@@ -233,7 +245,7 @@ function App() {
       <header className="topbar"><div className="breadcrumb">Workspace <span>/</span> <b>{activeView === 'overview' ? 'Overview' : activeView === 'datasets' ? 'My datasets' : 'Reports'}</b></div><div className="top-actions"><div className={`status-pill ${serviceStatus === 'database' || serviceStatus === 'offline' ? 'status-warning' : ''}`}><span />{serviceStatus === 'checking' ? 'Checking systems…' : serviceStatus === 'ok' ? 'All systems operational' : serviceStatus === 'database' ? 'Database unavailable' : 'API unavailable'}</div><button className="icon-button"><Bell size={18} /><i /></button><div className="top-avatar">{session.user.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div></div></header>
       <div className="content">
         <section className="welcome-row"><div><div className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase()}</div><h1>{activeView === 'overview' ? `Good morning, ${session.user.name.split(' ')[0]}` : activeView === 'datasets' ? 'Your datasets' : 'Saved reports'} <span className="wave">✳</span></h1><p className="subheading">{activeView === 'overview' ? "Here's what's happening with your data today." : activeView === 'datasets' ? 'Browse, search, and manage your uploaded files.' : 'Open an analysis report or download a copy.'}</p></div><label className={`primary-button ${uploading ? 'is-loading' : ''}`}><Plus size={17} />{uploading ? <>Analyzing {uploadingFileName}…</> : 'Upload dataset'}<input type="file" accept=".csv,text/csv" onChange={uploadFile} /></label></section>
-        {notice && <div className={`notice ${noticeError ? 'error' : ''}`}>{noticeError ? <X size={15} /> : <Check size={15} />}{notice}<button onClick={() => { setNotice(''); setNoticeError(false); }}><X size={15} /></button></div>}
+        {notice && <div className={`notice ${noticeError ? 'error' : ''}`} role={noticeError ? 'alert' : 'status'} aria-live={noticeError ? 'assertive' : 'polite'}>{noticeError ? <X size={15} /> : <Check size={15} />}{notice}<button aria-label="Dismiss message" onClick={() => setNotice('')}><X size={15} /></button></div>}
         {activeView === 'overview' && <>
         <section className="stats-grid">
           <StatCard label="Total datasets" value={String(totalDatasets).padStart(2, '0')} note="Saved in your workspace" icon={<Database size={17} />} tone="violet" trend="Saved reports" />
@@ -246,10 +258,10 @@ function App() {
           <div className="panel chart-panel"><div className="panel-heading"><div><div className="panel-title">Dataset activity</div><div className="panel-description">Rows in your latest saved datasets</div></div><div className="activity-total">{datasets.length} saved</div></div><div className="chart-legend"><span><i className="legend-dot revenue-dot" />Rows per dataset</span></div>{activityRows.length ? <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><BarChart data={activityRows} margin={{ top: 8, right: 2, left: -16, bottom: 0 }}><CartesianGrid vertical={false} stroke="#edf0f4" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#9ba3b1', fontSize: 9 }} dy={9} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#a5acb7', fontSize: 10 }} /><Tooltip cursor={{ fill: '#f7f8fb' }} contentStyle={{ border: '1px solid #eceef2', borderRadius: 10, fontSize: 12 }} /><Bar dataKey="rows" fill="#6558e8" radius={[4, 4, 0, 0]} maxBarSize={28} /></BarChart></ResponsiveContainer></div> : <div className="chart-empty">Upload a CSV to see activity here.</div>}</div>
           <QualityOverview datasets={datasets} />
         </section>}
-        {activeView !== 'reports' && <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{matchingDatasets}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => { setSearch(event.target.value); setDatasetPage(1); }} /></div><select className="filter-button" value={sortBy} onChange={(event) => { setSortBy(event.target.value); setDatasetPage(1); }} aria-label="Sort datasets"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="nameAsc">Name A–Z</option><option value="nameDesc">Name Z–A</option><option value="rowsDesc">Most rows</option></select><select className="filter-button" value={dateFilter} onChange={(event) => { setDateFilter(event.target.value); setDatasetPage(1); }} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state"><span className="loading-spinner" /> Loading your datasets…</div> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : totalDatasets === 0 ? <div className="empty-state"><div className="empty-state-icon"><FileSpreadsheet size={19} /></div><b>Start with a sample dataset</b><span>See summaries, data quality checks, and charts with a small example CSV.</span><button className="sample-button" onClick={uploadSampleDataset} disabled={uploading}><FileSpreadsheet size={14} />{uploading ? 'Analyzing sample…' : 'Analyze sample data'}</button></div> : 'No datasets on this page.'}</div>}</div><div className="table-footer"><span>Showing {matchingDatasets ? (datasetPage - 1) * 8 + 1 : 0}–{Math.min(datasetPage * 8, matchingDatasets)} of {matchingDatasets} matching datasets</span><div className="pagination-controls"><button disabled={datasetPage <= 1 || loadingDatasets} onClick={() => setDatasetPage((page) => page - 1)}>Previous</button><span>{datasetPage} / {pageCount}</span><button disabled={datasetPage >= pageCount || loadingDatasets} onClick={() => setDatasetPage((page) => page + 1)}>Next</button></div><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>}
-        {activeView === 'reports' && <ReportsList datasets={visibleDatasets} loading={loadingDatasets} page={datasetPage} pageCount={pageCount} onPage={setDatasetPage} onOpen={selectDataset} />}
+        {activeView !== 'reports' && <section className="panel datasets-panel"><div className="datasets-heading"><div><div className="panel-title">Your datasets <span className="table-count">{matchingDatasets}</span></div><div className="panel-description">Manage and explore your uploaded files</div></div><div className="table-actions"><div className="search-box"><Search size={15} /><input placeholder="Search datasets..." value={search} onChange={(event) => { setSearch(event.target.value); setDatasetPage(1); }} /></div><select className="filter-button" value={sortBy} onChange={(event) => { setSortBy(event.target.value); setDatasetPage(1); }} aria-label="Sort datasets"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="nameAsc">Name A–Z</option><option value="nameDesc">Name Z–A</option><option value="rowsDesc">Most rows</option></select><select className="filter-button" value={dateFilter} onChange={(event) => { setDateFilter(event.target.value); setDatasetPage(1); }} aria-label="Filter datasets by date"><option value="all">All time</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select></div></div><div className="dataset-table"><div className="table-header"><span>NAME</span><span>ROWS</span><span>COLUMNS</span><span>LAST ANALYZED</span><span>STATUS</span><span /></div>{loadingDatasets ? <div className="table-state" role="status" aria-live="polite"><span className="loading-spinner" /> Loading your datasets…</div> : datasetError ? <LoadError label="datasets" onRetry={retryDatasetLoad} /> : visibleDatasets.length ? visibleDatasets.map((item) => <DatasetRow key={item.id || item.name} item={item} isActive={active?.id === item.id} onSelect={() => selectDataset(item)} onRename={() => { setRenameTarget(item); setRenameValue(item.name); }} onDelete={() => setDeleteTarget(item)} />) : <div className="empty-search">{search || dateFilter !== 'all' ? 'No datasets match these filters.' : totalDatasets === 0 ? <div className="empty-state"><div className="empty-state-icon"><FileSpreadsheet size={19} /></div><b>Start with a sample dataset</b><span>See summaries, data quality checks, and charts with a small example CSV.</span><button className="sample-button" onClick={uploadSampleDataset} disabled={uploading}><FileSpreadsheet size={14} />{uploading ? 'Analyzing sample…' : 'Analyze sample data'}</button></div> : 'No datasets on this page.'}</div>}</div><div className="table-footer"><span>Showing {matchingDatasets ? (datasetPage - 1) * 8 + 1 : 0}–{Math.min(datasetPage * 8, matchingDatasets)} of {matchingDatasets} matching datasets</span><div className="pagination-controls"><button disabled={datasetPage <= 1 || loadingDatasets} onClick={() => setDatasetPage((page) => page - 1)}>Previous</button><span>{datasetPage} / {pageCount}</span><button disabled={datasetPage >= pageCount || loadingDatasets} onClick={() => setDatasetPage((page) => page + 1)}>Next</button></div><button onClick={() => document.querySelector('input[type="file"]')?.click()}>Upload a dataset <ArrowUpRight size={14} /></button></div></section>}
+        {activeView === 'reports' && <ReportsList datasets={visibleDatasets} loading={loadingDatasets} error={datasetError} onRetry={retryDatasetLoad} page={datasetPage} pageCount={pageCount} onPage={setDatasetPage} onOpen={selectDataset} />}
 
-        {openingReport && <div className="report-loading">Loading saved report…</div>}
+        {openingReport && <div className="report-loading" role="status" aria-live="polite">Loading saved report…</div>}
         {active?.report && <ReportPanel dataset={active} />}
         {renameTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingAction) setRenameTarget(null); }}><section className="action-modal" role="dialog" aria-modal="true" aria-labelledby="rename-title"><button className="modal-close" aria-label="Close" onClick={() => setRenameTarget(null)}><X size={17} /></button><div className="modal-icon rename-icon"><FileText size={17} /></div><h2 id="rename-title">Rename dataset</h2><p>Choose a clear name for this saved dataset.</p><label className="modal-label">Dataset name<input autoFocus maxLength={100} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') renameDataset(renameTarget); }} /></label><div className="modal-actions"><button className="secondary-action" onClick={() => setRenameTarget(null)} disabled={savingAction}>Cancel</button><button className="confirm-action" onClick={() => renameDataset(renameTarget)} disabled={savingAction || !renameValue.trim()}>{savingAction ? 'Saving…' : 'Save name'}</button></div></section></div>}
         {deleteTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingAction) setDeleteTarget(null); }}><section className="action-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><button className="modal-close" aria-label="Close" onClick={() => setDeleteTarget(null)}><X size={17} /></button><div className="modal-icon delete-icon"><Trash2 size={17} /></div><h2 id="delete-title">Delete this dataset?</h2><p><b>{deleteTarget.name}</b> and its saved analysis report will be permanently removed.</p><div className="modal-actions"><button className="secondary-action" onClick={() => setDeleteTarget(null)} disabled={savingAction}>Cancel</button><button className="danger-action" onClick={() => deleteDataset(deleteTarget)} disabled={savingAction}>{savingAction ? 'Deleting…' : 'Delete dataset'}</button></div></section></div>}
@@ -372,8 +384,15 @@ function ReportQualityCards({ report }) {
   return <><div className="report-quality-grid"><ReportMetric label="Completeness" value={`${completeness}%`} detail={`${blanks.toLocaleString()} blank cells`} tone={completeness < 90 ? 'attention' : 'good'} /><ReportMetric label="Duplicate rows" value={duplicates.toLocaleString()} detail={duplicates ? 'Repeated records found' : 'No repeated rows'} tone={duplicates ? 'attention' : 'good'} /><ReportMetric label="Invalid numeric values" value={invalid.toLocaleString()} detail={invalid ? 'Excluded from numeric stats' : 'No parsing issues'} tone={invalid ? 'attention' : 'good'} /></div><div className={`quality-notice ${warnings.length ? 'has-warnings' : ''}`}><span className="quality-notice-icon">{warnings.length ? '!' : '✓'}</span><div><b>{warnings.length ? 'Review these data quality findings' : 'No data quality issues found'}</b><span>{warnings.length ? warnings.join(' · ') : 'No blank cells, invalid numeric values, or duplicate rows were detected.'}</span></div></div></>;
 }
 function ReportMetric({ label, value, detail, tone }) { return <div className={`report-metric ${tone}`}><span>{label}</span><b>{value}</b><small>{detail}</small></div>; }
-function ReportsList({ datasets, loading, page, pageCount, onPage, onOpen }) {
-  return <section className="panel reports-list"><div className="datasets-heading"><div><div className="panel-title">Saved analysis reports</div><div className="panel-description">Open an analysis to view its charts, summary, and row preview.</div></div></div>{loading ? <div className="table-state"><span className="loading-spinner" /> Loading reports…</div> : datasets.length ? <div className="reports-cards">{datasets.map((dataset) => <article className="saved-report-card" key={dataset.id}><div className={`file-icon ${dataset.color}`}><FileSpreadsheet size={17} /></div><div className="saved-report-copy"><b>{dataset.name}</b><span>{dataset.rows} rows · {dataset.columnsCount} columns · {dataset.date}</span></div><button className="open-report-button" onClick={() => onOpen(dataset)}>Open report <ArrowUpRight size={14} /></button></article>)}</div> : <div className="empty-search">No saved reports yet. Upload and analyze a CSV to get started.</div>}<div className="reports-footer"><span>{datasets.length} report{datasets.length === 1 ? '' : 's'} on this page</span><div className="pagination-controls"><button disabled={page <= 1 || loading} onClick={() => onPage(page - 1)}>Previous</button><span>{page} / {pageCount}</span><button disabled={page >= pageCount || loading} onClick={() => onPage(page + 1)}>Next</button></div></div></section>;
+function ReportsList({ datasets, loading, error, onRetry, page, pageCount, onPage, onOpen }) {
+  return <section className="panel reports-list">
+    <div className="datasets-heading"><div><div className="panel-title">Saved analysis reports</div><div className="panel-description">Open an analysis to view its charts, summary, and row preview.</div></div></div>
+    {loading ? <div className="table-state" role="status" aria-live="polite"><span className="loading-spinner" /> Loading reports…</div> : error ? <LoadError label="reports" onRetry={onRetry} /> : datasets.length ? <div className="reports-cards">{datasets.map((dataset) => <article className="saved-report-card" key={dataset.id}><div className={`file-icon ${dataset.color}`}><FileSpreadsheet size={17} /></div><div className="saved-report-copy"><b>{dataset.name}</b><span>{dataset.rows} rows · {dataset.columnsCount} columns · {dataset.date}</span></div><button className="open-report-button" onClick={() => onOpen(dataset)}>Open report <ArrowUpRight size={14} /></button></article>)}</div> : <div className="empty-search" role="status">No saved reports yet. Upload and analyze a CSV to get started.</div>}
+    <div className="reports-footer"><span>{datasets.length} report{datasets.length === 1 ? '' : 's'} on this page</span><div className="pagination-controls"><button disabled={page <= 1 || loading || error} onClick={() => onPage(page - 1)}>Previous</button><span>{page} / {pageCount}</span><button disabled={page >= pageCount || loading || error} onClick={() => onPage(page + 1)}>Next</button></div></div>
+  </section>;
+}
+function LoadError({ label, onRetry }) {
+  return <div className="load-error" role="alert"><b>Could not load {label}.</b><span>Check that the API and database are running, then try again.</span><button className="retry-button" onClick={onRetry}>Try again</button></div>;
 }
 function downloadReportJson(dataset) {
   const reportFile = { exportedAt: new Date().toISOString(), dataset: { name: dataset.name, rows: dataset.rowCount, columns: dataset.columnCount }, report: dataset.report };
