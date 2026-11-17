@@ -60,3 +60,5 @@
 }
 
 .load-error{min-height:130px;padding:22px 14px;display:grid;justify-items:center;align-content:center;gap:7px;text-align:center}.load-error>b{font-size:11px;color:#855b4c}.load-error>span{font-size:9px;color:#9298a3;line-height:1.5}.retry-button{height:29px;margin-top:3px;padding:0 11px;border:1px solid #eadfdb;border-radius:6px;background:#fff;color:#9b5d4b;font-size:9px;font-weight:600}.retry-button:hover{background:#fff7f4}.retry-button:focus-visible{outline-color:#bd7964}
+
+.chart-data-details{margin-top:8px}.chart-data-details summary{width:max-content;max-width:100%;font-size:9px;color:#7066c8;cursor:pointer}.chart-data-details summary:focus-visible{outline-offset:2px}.chart-data-table-wrap{max-width:100%;overflow:auto;margin-top:7px;border:1px solid #eef0f3;border-radius:6px}.chart-data-table{width:100%;border-collapse:collapse;font-size:9px;white-space:nowrap}.chart-data-table caption{text-align:left;padding:7px 9px;color:#777e8b;font-size:9px}.chart-data-table th,.chart-data-table td{text-align:left;padding:6px 9px;border-top:1px solid #f0f1f4}.chart-data-table th{font-weight:600;color:#555b68;background:#fbfbfc}.chart-data-table td{color:#737987}
