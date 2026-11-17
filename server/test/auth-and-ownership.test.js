@@ -2,6 +2,7 @@ const { after, before, test } = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const createApp = require('../src/app');
+const readConfig = require('../src/config');
 const User = require('../src/models/User');
 const Dataset = require('../src/models/Dataset');
 
@@ -118,11 +119,54 @@ test('a user cannot list, open, rename, or delete another user dataset', async (
 });
 
 test('duplicate signups are rejected without returning account details', async () => {
-  const first = await register('Duplicate Test', 'duplicate@example.com');
-  const second = await register('Duplicate Test', 'DUPLICATE@example.com');
-  assert.equal(first.status, 201);
-  assert.equal(second.status, 409);
-  assert.deepEqual(await second.json(), { message: 'An account with this email already exists.' });
+  const responses = await Promise.all([
+    register('Duplicate Test', 'duplicate@example.com'),
+    register('Duplicate Test', 'DUPLICATE@example.com'),
+  ]);
+  assert.deepEqual(responses.map((response) => response.status).sort(), [201, 409]);
+  const conflict = responses.find((response) => response.status === 409);
+  assert.deepEqual(await conflict.json(), { message: 'An account with this email already exists.' });
+});
+
+test('dataset rename enforces the same 100-character limit on the server', async () => {
+  const signup = await register('Rename Test User', 'rename@example.com');
+  const session = await signup.json();
+  const user = await User.findOne({ email: session.user.email });
+  const dataset = await Dataset.create({ userId: user._id, name: 'original.csv', originalName: 'original.csv' });
+  const headers = { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' };
+
+  const tooLong = await fetch(`${baseUrl}/api/datasets/${dataset.id}`, {
+    method: 'PATCH', headers, body: JSON.stringify({ name: 'x'.repeat(101) }),
+  });
+  assert.equal(tooLong.status, 400);
+  assert.match((await tooLong.json()).message, /100 characters or fewer/i);
+
+  const validRename = await fetch(`${baseUrl}/api/datasets/${dataset.id}`, {
+    method: 'PATCH', headers, body: JSON.stringify({ name: '  renamed.csv  ' }),
+  });
+  assert.equal(validRename.status, 200);
+  assert.equal((await validRename.json()).name, 'renamed.csv');
+});
+
+test('server config validates production requirements and port numbers', () => {
+  assert.deepEqual(readConfig({ NODE_ENV: 'development' }), {
+    port: 5000,
+    mongodbUri: '',
+    isProduction: false,
+  });
+  assert.throws(() => readConfig({ NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(32) }), /MONGODB_URI/);
+  assert.throws(() => readConfig({ NODE_ENV: 'production', MONGODB_URI: 'mongodb://localhost/app', JWT_SECRET: 'short' }), /JWT_SECRET/);
+  assert.throws(() => readConfig({ PORT: '70000' }), /PORT/);
+  assert.deepEqual(readConfig({
+    NODE_ENV: 'production',
+    PORT: '8080',
+    MONGODB_URI: 'mongodb://localhost/app',
+    JWT_SECRET: 'a-valid-production-secret-with-more-than-32-characters',
+  }), {
+    port: 8080,
+    mongodbUri: 'mongodb://localhost/app',
+    isProduction: true,
+  });
 });
 
 test('CSV analysis handles numeric threshold, missing and invalid values', async () => {

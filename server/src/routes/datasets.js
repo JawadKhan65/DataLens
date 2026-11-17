@@ -122,6 +122,7 @@ router.post('/analyze', requireAuth, upload.single('file'), async (req, res) => 
 router.patch('/:id', requireAuth, async (req, res) => {
   const name = String(req.body.name || '').trim();
   if (!name) return res.status(400).json({ message: 'Dataset name is required.' });
+  if (name.length > 100) return res.status(400).json({ message: 'Dataset name must be 100 characters or fewer.' });
   try {
     const dataset = await Dataset.findOneAndUpdate({ _id: req.params.id, userId: req.userId }, { name }, { new: true, runValidators: true }).select('-preview');
     if (!dataset) return res.status(404).json({ message: 'Dataset not found.' });

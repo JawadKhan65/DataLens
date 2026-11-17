@@ -30,6 +30,7 @@ router.post('/register', authLimiter, async (req, res) => {
     const user = await User.create({ name, email, password: hashedPassword });
     res.status(201).json(createSession(user));
   } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ message: 'An account with this email already exists.' });
     res.status(500).json({ message: 'Could not create your account.' });
   }
 });
