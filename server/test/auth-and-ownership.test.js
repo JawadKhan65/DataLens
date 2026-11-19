@@ -269,6 +269,36 @@ test('the owner can list, open, rename, and delete a saved dataset with accurate
   assert.equal(emptyList.totalRows, 0);
 });
 
+test('dataset listing searches, sorts, and paginates while keeping account totals accurate', async () => {
+  const signup = await register('Listing Test User', 'listing@example.com');
+  const session = await signup.json();
+  const user = await User.findOne({ email: session.user.email });
+  await Dataset.create([
+    { userId: user._id, name: 'alpha.csv', originalName: 'alpha.csv', rowCount: 3 },
+    { userId: user._id, name: 'beta.csv', originalName: 'beta.csv', rowCount: 8 },
+    { userId: user._id, name: 'gamma.csv', originalName: 'gamma.csv', rowCount: 5 },
+  ]);
+  const headers = { Authorization: `Bearer ${session.token}` };
+
+  const pageResponse = await fetch(`${baseUrl}/api/datasets?page=2&limit=2&sort=nameAsc`, { headers });
+  assert.equal(pageResponse.status, 200);
+  const page = await pageResponse.json();
+  assert.deepEqual(page.items.map((item) => item.name), ['gamma.csv']);
+  assert.equal(page.total, 3);
+  assert.equal(page.page, 2);
+  assert.equal(page.pageCount, 2);
+  assert.equal(page.totalDatasets, 3);
+  assert.equal(page.totalRows, 16);
+
+  const searchResponse = await fetch(`${baseUrl}/api/datasets?search=BET&sort=rowsDesc`, { headers });
+  assert.equal(searchResponse.status, 200);
+  const search = await searchResponse.json();
+  assert.deepEqual(search.items.map((item) => item.name), ['beta.csv']);
+  assert.equal(search.total, 1);
+  assert.equal(search.totalDatasets, 3);
+  assert.equal(search.totalRows, 16);
+});
+
 test('health endpoint reports connected and unavailable database states', async () => {
   const healthy = await fetch(`${baseUrl}/api/health`);
   assert.equal(healthy.status, 200);
