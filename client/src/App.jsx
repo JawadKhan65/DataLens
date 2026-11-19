@@ -183,7 +183,6 @@ function App() {
       const remainingMatches = Math.max(0, matchingDatasets - 1);
       setMatchingDatasets(remainingMatches);
       setPageCount(Math.max(1, Math.ceil(remainingMatches / 8)));
-      setPageCount(Math.max(1, Math.ceil((totalDatasets - 1) / 8)));
       if (next.length === 0 && datasetPage > 1) setDatasetPage((current) => current - 1);
       if (active?.id === item.id) setActive(next[0] || null);
       setNotice(`${item.name} deleted.`);
