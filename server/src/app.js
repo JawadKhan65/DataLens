@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const datasetRoutes = require('./routes/datasets');
 const authRoutes = require('./routes/auth');
 
-function createApp() {
+function createApp({ databaseConnection = mongoose.connection } = {}) {
   const app = express();
   app.use(helmet({
     contentSecurityPolicy: {
@@ -23,7 +23,7 @@ function createApp() {
   app.use(express.json({ limit: '100kb' }));
 
   app.get('/api/health', (req, res) => {
-    const database = mongoose.connection.readyState === 1 ? 'connected' : 'unavailable';
+    const database = databaseConnection.readyState === 1 ? 'connected' : 'unavailable';
     const status = database === 'connected' ? 'ok' : 'degraded';
     res.status(database === 'connected' ? 200 : 503).json({ status, database, message: 'DataLens API is running' });
   });

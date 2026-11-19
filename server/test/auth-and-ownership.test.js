@@ -1,3 +1,7 @@
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = 'datalens-test-secret-with-more-than-32-characters';
+process.env.CLIENT_ORIGIN = 'http://localhost:5173';
+
 const { after, before, test } = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
@@ -5,10 +9,6 @@ const createApp = require('../src/app');
 const readConfig = require('../src/config');
 const User = require('../src/models/User');
 const Dataset = require('../src/models/Dataset');
-
-process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'datalens-test-secret-with-more-than-32-characters';
-process.env.CLIENT_ORIGIN = 'http://localhost:5173';
 
 const databaseName = `datalens_test_${Date.now()}_${process.pid}`;
 const databaseUri = `mongodb://127.0.0.1:27017/${databaseName}`;
@@ -222,4 +222,74 @@ test('upload rejects files without a CSV filename', async () => {
 
   assert.equal(response.status, 400);
   assert.equal((await response.json()).message, 'Only CSV files are allowed.');
+});
+
+test('the owner can list, open, rename, and delete a saved dataset with accurate totals', async () => {
+  const signup = await register('Dataset Owner', 'dataset-owner@example.com');
+  const session = await signup.json();
+  const user = await User.findOne({ email: session.user.email });
+  const dataset = await Dataset.create({
+    userId: user._id,
+    name: 'owner-data.csv',
+    originalName: 'owner-data.csv',
+    rowCount: 12,
+    columnCount: 2,
+    preview: [{ name: 'A', value: 3 }],
+  });
+  const headers = { Authorization: `Bearer ${session.token}` };
+
+  const listResponse = await fetch(`${baseUrl}/api/datasets`, { headers });
+  assert.equal(listResponse.status, 200);
+  const list = await listResponse.json();
+  assert.equal(list.total, 1);
+  assert.equal(list.totalDatasets, 1);
+  assert.equal(list.totalRows, 12);
+
+  const openResponse = await fetch(`${baseUrl}/api/datasets/${dataset.id}`, { headers });
+  assert.equal(openResponse.status, 200);
+  assert.equal((await openResponse.json()).preview.length, 1);
+
+  const renameResponse = await fetch(`${baseUrl}/api/datasets/${dataset.id}`, {
+    method: 'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'renamed-owner-data.csv' }),
+  });
+  assert.equal(renameResponse.status, 200);
+  assert.equal((await renameResponse.json()).name, 'renamed-owner-data.csv');
+
+  const deleteResponse = await fetch(`${baseUrl}/api/datasets/${dataset.id}`, {
+    method: 'DELETE', headers,
+  });
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(await Dataset.findById(dataset.id), null);
+
+  const emptyListResponse = await fetch(`${baseUrl}/api/datasets`, { headers });
+  const emptyList = await emptyListResponse.json();
+  assert.equal(emptyList.totalDatasets, 0);
+  assert.equal(emptyList.totalRows, 0);
+});
+
+test('health endpoint reports connected and unavailable database states', async () => {
+  const healthy = await fetch(`${baseUrl}/api/health`);
+  assert.equal(healthy.status, 200);
+  assert.deepEqual(await healthy.json(), {
+    status: 'ok',
+    database: 'connected',
+    message: 'DataLens API is running',
+  });
+
+  const offlineServer = createApp({ databaseConnection: { readyState: 0 } }).listen(0);
+  await new Promise((resolve, reject) => {
+    offlineServer.once('listening', resolve);
+    offlineServer.once('error', reject);
+  });
+  try {
+    const offline = await fetch(`http://127.0.0.1:${offlineServer.address().port}/api/health`);
+    assert.equal(offline.status, 503);
+    const body = await offline.json();
+    assert.equal(body.status, 'degraded');
+    assert.equal(body.database, 'unavailable');
+  } finally {
+    await new Promise((resolve) => offlineServer.close(resolve));
+  }
 });
