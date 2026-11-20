@@ -140,19 +140,6 @@ export function StatCard({ label, value, note, icon, tone, trend }) {
     </div>
   );
 }
-function QualityRow({ label, value, percent, color }) {
-  return (
-    <div className="quality-row">
-      <div>
-        <span>{label}</span>
-        <b>{value}</b>
-      </div>
-      <div className="progress-track">
-        <i className={color} style={{ width: percent }} />
-      </div>
-    </div>
-  );
-}
 function ReportQualityCards({ report }) {
   const columns = report.columns || [];
   const rowCount = Number(report.rowCount || 0);

@@ -1,5 +1,19 @@
 import { ArrowUpRight, Check, FileSpreadsheet, FileText, Trash2 } from "lucide-react";
 
+function QualityRow({ label, value, percent, color }) {
+  return (
+    <div className="quality-row">
+      <div>
+        <span>{label}</span>
+        <b>{value}</b>
+      </div>
+      <div className="progress-track">
+        <i className={color} style={{ width: percent }} />
+      </div>
+    </div>
+  );
+}
+
 export function QualityOverview({ datasets }) {
   const columns = datasets.flatMap((dataset) => dataset.report?.columns || []);
   const totalCells = columns.reduce(

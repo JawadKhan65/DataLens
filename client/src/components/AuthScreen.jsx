@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Activity, ArrowUpRight, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { API_URL } from "../config.js";
 
 function AuthScreen({ mode, setMode, onSuccess, notice }) {
